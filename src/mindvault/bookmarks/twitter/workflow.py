@@ -14,7 +14,7 @@ from mindvault.core.config import settings
 from mindvault.bookmarks.twitter.database import create_database, save_tweet_to_db, get_tweet_by_id
 from mindvault.core.logger_setup import get_logger
 from mindvault.bookmarks.twitter.pending import PendingTweetsFinder
-from mindvault.bookmarks.twitter.scraper import TweetScraper
+from mindvault.bookmarks.twitter.scraper.cookie_scraper import CookieTweetScraper
 from mindvault.bookmarks.twitter.schema import TweetData
 from mindvault.bookmarks.twitter.extract import (
     extract_conversation_with_media,
@@ -185,9 +185,8 @@ class WorkflowManager:
             json.dump(pending_list[start_idx:], f)
         
         try:
-            scraper = TweetScraper(
+            scraper = CookieTweetScraper(
                 input_file=temp_ids_file,
-                output_dir=settings.tweet_data_dir
             )
             
             for tweet_id in pending_list[start_idx:]:

@@ -20,7 +20,6 @@ from twitter.scraper import Scraper as TwitterScraper
 from mindvault.core.config import settings
 from mindvault.core.logger_setup import get_logger, logger as base_logger
 from mindvault.core.mongodb_utils import save_raw_tweet
-
 logger = get_logger(__name__)
 
 
@@ -38,14 +37,13 @@ class TweetNotFoundError(Exception):
         super().__init__(self.message)
 
 
-class TweetScraper:
+class CookieTweetScraper:
     """Handles scraping tweet data from Twitter.
     
-    This class manages loading tweet IDs, fetching tweet data, and saving it to files.
+    This class manages loading tweet IDs, fetching tweet data, and saving it to MongoDB.
     
     Attributes:
         input_file: Path to JSON file containing tweet IDs
-        output_dir: Directory to save tweet data
         auth: Authentication details for Twitter API
         scraper: Instance of Twitter scraper
     """
@@ -53,21 +51,17 @@ class TweetScraper:
     def __init__(
         self,
         input_file: Path,
-        output_dir: Path,
         auth_details: Optional[Dict[str, str]] = None
     ) -> None:
         """Initialize the tweet scraper.
         
         Args:
             input_file: Path to JSON file containing tweet IDs
-            output_dir: Directory to save tweet data
             auth_details: Optional auth details dict. If None, uses default auth
         """
         self.auth = auth_details or settings.get_scraper_auth()
         self.scraper = TwitterScraper(cookies=self.auth, pbar=False, save=False)
         self.input_file = Path(input_file)
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
 
     def load_tweet_ids(self) -> List[int]:
         """Load tweet IDs from the input file.
@@ -186,9 +180,8 @@ class TweetScraper:
 
 def main() -> None:
     """Main entry point for the tweet scraper."""
-    scraper = TweetScraper(
+    scraper = CookieTweetScraper(
         input_file=settings.tweet_ids_path / "pending_tweets.json",
-        output_dir=settings.tweet_data_dir,
     )
     scraper.scrape_tweets()
 
