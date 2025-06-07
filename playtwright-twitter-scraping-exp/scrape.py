@@ -2,6 +2,18 @@ from playwright.sync_api import sync_playwright, Playwright, Error, Response
 import json
 import time
 import urllib.parse
+from typing import List
+
+def format_output_json(data: List[dict]) -> List[dict]:
+    out = {"threaded_conversation_with_injections_v2": {
+        "instructions": [{"type": "TimelineAddEntries", "entries": []}]
+    }}
+    for item in data:
+        out["threaded_conversation_with_injections_v2"]["instructions"][0]["entries"].extend(item["data"]["threaded_conversation_with_injections_v2"]["instructions"][0]["entries"])
+    return out
+
+
+        
 
 # Store captured data
 captured_data = []
@@ -42,28 +54,28 @@ def handle_response(response: Response):
 
     # Check if the URL matches the pattern for TweetDetail GraphQL API
     if "/i/api/graphql/" in response.url and "/TweetDetail" in response.url:
-        print(f"\n--- Intercepted TweetDetail Response ---")
-        print("Request Headers:")
-        for name, value in response.request.headers.items():
-            print(f"  {name}: {value}")
+        # print(f"\n--- Intercepted TweetDetail Response ---")
+        # print("Request Headers:")
+        # for name, value in response.request.headers.items():
+        #     print(f"  {name}: {value}")
 
-        print(f"URL: {response.url}")
+        # print(f"URL: {response.url}")
         
-        # Format and print URL in a readable format
-        formatted_url = format_url(response.url)
-        print("\nFormatted URL:")
-        print(f"Base URL: {formatted_url['base_url']}")
-        print("Query Parameters:")
-        for param_name, param_value in formatted_url['params'].items():
-            if isinstance(param_value, dict):
-                print(f"  {param_name}:")
-                for sub_key, sub_value in param_value.items():
-                    print(f"    {sub_key}: {sub_value}")
-            else:
-                print(f"  {param_name}: {param_value}")
+        # # Format and print URL in a readable format
+        # formatted_url = format_url(response.url)
+        # print("\nFormatted URL:")
+        # print(f"Base URL: {formatted_url['base_url']}")
+        # print("Query Parameters:")
+        # for param_name, param_value in formatted_url['params'].items():
+        #     if isinstance(param_value, dict):
+        #         print(f"  {param_name}:")
+        #         for sub_key, sub_value in param_value.items():
+        #             print(f"    {sub_key}: {sub_value}")
+        #     else:
+        #         print(f"  {param_name}: {param_value}")
         
-        print(f"Status: {response.status}")
-        print(f"Headers: {response.headers}") # Print headers
+        # print(f"Status: {response.status}")
+        # print(f"Headers: {response.headers}") # Print headers
 
         try:
             data = response.json()
@@ -133,7 +145,7 @@ def run(playwright: Playwright):
         page.on("response", handle_response)
 
         # Navigate to the Tweet
-        tweet_url = "https://x.com/EyalToledano/status/1923885748958179496"
+        tweet_url = "https://x.com/aiDotEngineer/status/1930825193062277238"
         print(f"Navigating to {tweet_url}...")
         
         try:
@@ -141,6 +153,7 @@ def run(playwright: Playwright):
             page.goto(tweet_url, timeout=30000)
             print(f"Initial navigation to {page.title()} complete.")
             # page.wait_for_timeout(3000) # REMOVED - Wait for signal instead
+            # page.wait_for_load_state('load', timeout=30000) # This doesnt make any difference
         except Exception as nav_error:
             print(f"Navigation failed: {nav_error}")
             # Consider cleanup if navigation fails critically
@@ -164,7 +177,7 @@ def run(playwright: Playwright):
         print("Initial TweetDetail response received. Starting pagination.")
 
         # --- Implement Pagination through Scrolling ---
-        max_scrolls = 10 # Allow more scrolls
+        max_scrolls = 5 # Allow more scrolls
         scroll_count = 0
         stalled_scrolls = 0 # Count scrolls with no new entries
 
@@ -186,7 +199,7 @@ def run(playwright: Playwright):
             # Wait for the next TweetDetail response after scrolling
             print("Waiting for next TweetDetail response...")
             wait_start_time = time.time()
-            scroll_wait_timeout = 20 # Timeout for waiting for response after scroll
+            scroll_wait_timeout = 5 # Timeout for waiting for response after scroll
             while not next_response_received:
                 page.wait_for_timeout(100) # Check frequently
                 if time.time() - wait_start_time > scroll_wait_timeout:
@@ -220,7 +233,7 @@ def run(playwright: Playwright):
 
         # Save captured data to file
         with open("captured_tweet_data.json", "w") as f:
-            json.dump(captured_data, f, indent=2) # Save the raw list
+            json.dump(format_output_json(captured_data), f, indent=2) # Save the raw list
         print("Raw data saved to captured_tweet_data.json")
 
         # Keep the script alive to observe or debug
