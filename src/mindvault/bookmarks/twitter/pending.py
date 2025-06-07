@@ -102,7 +102,7 @@ class PendingTweetsFinder:
 def main() -> None:
     """Main entry point for finding pending tweets."""
     logger.info("Starting pending tweets finder")
-    source_file = Path('/Users/vedmani/projects/MindVault/artifacts/bookmark_ids/tweets_ids_20250314_184113.json')
+    source_file = Path('/Users/vedmani/projects/MindVault/artifacts/bookmark_ids/tweets_ids_20250607_141504.json')
     
     finder = PendingTweetsFinder(source_file)
     pending_ids = finder.find_pending_tweets()
