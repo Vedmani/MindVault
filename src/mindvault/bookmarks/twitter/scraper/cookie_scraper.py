@@ -20,24 +20,12 @@ from twitter.scraper import Scraper as TwitterScraper
 from mindvault.core.config import settings
 from mindvault.core.logger_setup import get_logger, logger as base_logger
 from mindvault.core.mongodb_utils import save_raw_tweet
+from mindvault.bookmarks.twitter.scraper.base import BaseTweetScraper, TweetNotFoundError
+
 logger = get_logger(__name__)
 
 
-class TweetNotFoundError(Exception):
-    """Raised when a tweet cannot be found or has been deleted.
-    
-    Attributes:
-        tweet_id: ID of the tweet that wasn't found
-        message: Error message with details
-    """
-
-    def __init__(self, tweet_id: str, message: str = "Tweet not found or deleted") -> None:
-        self.tweet_id = tweet_id
-        self.message = f"{message} (Tweet ID: {tweet_id})"
-        super().__init__(self.message)
-
-
-class CookieTweetScraper:
+class CookieTweetScraper(BaseTweetScraper):
     """Handles scraping tweet data from Twitter.
     
     This class manages loading tweet IDs, fetching tweet data, and saving it to MongoDB.
@@ -59,41 +47,11 @@ class CookieTweetScraper:
             input_file: Path to JSON file containing tweet IDs
             auth_details: Optional auth details dict. If None, uses default auth
         """
+        super().__init__(input_file)
         self.auth = auth_details or settings.get_scraper_auth()
         self.scraper = TwitterScraper(cookies=self.auth, pbar=False, save=False)
-        self.input_file = Path(input_file)
 
-    def load_tweet_ids(self) -> List[int]:
-        """Load tweet IDs from the input file.
-        
-        Returns:
-            List of tweet IDs as integers
-            
-        Raises:
-            Exception: If loading tweet IDs fails
-        """
-        try:
-            tweet_ids = json.loads(self.input_file.read_text())
-            return [int(tweet_id) for tweet_id in tweet_ids]
-        except Exception as e:
-            logger.error(f"Failed to load tweet IDs: {e}")
-            raise
 
-    def save_tweet_data(self, tweet_data: dict, tweet_id: str) -> None:
-        """Save tweet data to MongoDB.
-        
-        Args:
-            tweet_data: Dictionary containing tweet data
-            tweet_id: ID of the tweet
-            
-        Raises:
-            Exception: If saving tweet data fails
-        """
-        try:
-            save_raw_tweet(tweet_id, tweet_data)
-        except Exception as e:
-            logger.error(f"Failed to save tweet data for ID {tweet_id}: {e}")
-            raise
 
     @retry(
         retry=retry_if_not_exception_type(TweetNotFoundError),
