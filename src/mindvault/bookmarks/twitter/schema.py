@@ -24,10 +24,15 @@ class QuotedStatusResult(BaseModel):
 
 #TODO: Article tweets are not being scraped refer to tweet 1860767695135973842
 
-class LegacyInUserResultsInCore(BaseModel):
-    can_dm: bool
-    can_media_tag: bool
+class InnerCore(BaseModel):
     created_at: str
+    name: str
+    screen_name: str
+
+class LegacyInUserResultsInCore(BaseModel):
+    can_dm: Optional[bool] = None
+    can_media_tag: Optional[bool] = None
+    created_at: Optional[str] = None
     default_profile: bool
     default_profile_image: bool
     description: str
@@ -39,18 +44,19 @@ class LegacyInUserResultsInCore(BaseModel):
     has_custom_timelines: bool
     is_translator: bool
     listed_count: int
-    location: str
+    location: Optional[str] = None
     media_count: int
-    name: str
+    name: Optional[str] = None
     normal_followers_count: int
     pinned_tweet_ids_str: List[str]
-    screen_name: str  # Adding this as it's useful for identification
+    screen_name: Optional[str] = None  # Adding this as it's useful for identification
     
 
 class ResultInsideUserResultsInCore(BaseModel):
     typename: Literal["User"] = Field(alias="__typename")
     id: str
     rest_id: str
+    core: InnerCore
     legacy: LegacyInUserResultsInCore
 
 class UserResults(BaseModel):
@@ -60,10 +66,10 @@ class Core(BaseModel):
     user_results: UserResults
 
     def get_user_name(self) -> str:
-        return self.user_results.result.legacy.name
+        return self.user_results.result.core.name or "Unknown Name"
 
     def get_screen_name(self) -> str:
-        return self.user_results.result.legacy.screen_name
+        return self.user_results.result.core.screen_name or "Unknown User"
 
 class MediaSize(BaseModel):
     h: int
@@ -221,7 +227,7 @@ class UserRefResult(BaseModel):
             required_fields = [
                 'id', 'rest_id', 'affiliates_highlighted_label',
                 'has_graduated_access', 'is_blue_verified', 'legacy',
-                'smart_blocked_by', 'smart_blocking', 'business_account'
+                # 'smart_blocked_by', 'smart_blocking', 'business_account'
             ]
             for field in required_fields:
                 if getattr(self, field) is None:
@@ -274,7 +280,7 @@ class Tweet(BaseModel):
     card: Optional[Card] = None
 
 class TweetWithVisibilityResult(BaseModel):
-    typename: Optional[Literal["TweetWithVisibilityResults", "UserUnavailable"]] = Field(alias="__typename", default=None)
+    typename: Optional[Literal["TweetWithVisibilityResults", "UserUnavailable", "Tweet"]] = Field(alias="__typename", default=None)
     tweet: Optional[Tweet] = None
 
     @model_validator(mode='after')
@@ -286,8 +292,8 @@ class TweetWithVisibilityResult(BaseModel):
 
 
 class TweetTombstone(BaseModel):
-    typename: Literal["TweetTombstone"] = Field(alias="__typename")
-    tombstone: Any
+    typename: Literal["TweetTombstone", "Tweet"] = Field(alias="__typename")
+    tombstone: Optional[Any] = None
 
 
 class TweetResult(BaseModel):

@@ -933,7 +933,7 @@ def extract_conversation_with_media(
 
 if __name__ == "__main__":
     # Example usage for single tweet
-    tweet_file = Path("/Users/vedmani/projects/MindVault/artifacts/tweet_data/1897286735501123777.json")
+    tweet_file = Path("/Users/vedmani/projects/mindvault-collection/MindVault/captured_tweet_data.json")
     
     # Process without saving, keeping original media URLs
     conversation = process_single_tweet_file(tweet_file, media_url_handling=MediaUrlHandling.REMOVE)
