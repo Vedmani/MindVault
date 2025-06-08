@@ -1164,6 +1164,7 @@ dependencies = [
     { name = "litellm" },
     { name = "loguru" },
     { name = "pillow" },
+    { name = "playwright" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pymongo" },
@@ -1175,18 +1176,18 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "jupyterlab" },
-    { name = "playwright" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "google-genai", specifier = ">=1.9.0" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.28.1" },
-    { name = "instructor", extras = ["litellm"], specifier = ">=1.7.9" },
+    { name = "instructor", specifier = ">=1.7.9" },
     { name = "jsonref", specifier = ">=1.1.0" },
     { name = "litellm", specifier = ">=1.65.4.post1" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "pillow", specifier = ">=11.1.0" },
+    { name = "playwright", specifier = ">=1.52.0" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
     { name = "pymongo", specifier = ">=4.11.3" },
@@ -1196,10 +1197,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "jupyterlab", specifier = ">=4.3.5" },
-    { name = "playwright", specifier = ">=1.52.0" },
-]
+dev = [{ name = "jupyterlab", specifier = ">=4.3.5" }]
 
 [[package]]
 name = "mistune"
