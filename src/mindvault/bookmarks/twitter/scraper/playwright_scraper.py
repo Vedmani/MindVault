@@ -73,10 +73,14 @@ class PlaywrightScraper(BaseTweetScraper):
             # Follow the same pattern as the experimental script
             if "data" in item and "threaded_conversation_with_injections_v2" in item["data"]:
                 instructions = item["data"]["threaded_conversation_with_injections_v2"]["instructions"]
-                if instructions and len(instructions) > 0 and "entries" in instructions[0]:
-                    out["threaded_conversation_with_injections_v2"]["instructions"][0]["entries"].extend(
-                        instructions[0]["entries"]
-                    )
+                if instructions:
+                    # Iterate through all instructions to find TimelineAddEntries
+                    for instruction in instructions:
+                        if (instruction.get("type") == "TimelineAddEntries" and 
+                            "entries" in instruction):
+                            out["threaded_conversation_with_injections_v2"]["instructions"][0]["entries"].extend(
+                                instruction["entries"]
+                            )
         return out
 
     def handle_response(self, response: Response) -> None:
