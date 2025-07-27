@@ -129,28 +129,27 @@ class WorkflowManager:
         Args:
             tweet_id: ID of the tweet
             tweet_data: Raw tweet data dictionary
+            
+        Raises:
+            Exception: If extraction or saving fails
         """
-        try:
-            # Parse the tweet data
-            tweet_data_model = TweetData.model_validate(tweet_data)
-            
-            # Extract conversation with media
-            extracted_data = extract_conversation_with_media(
-                tweet_data_model.threaded_conversation_with_injections_v2,
-                media_url_handling=MediaUrlHandling.REMOVE,
-                extract_video_thumbnail=False,
-                extract_videos=True,
-                extract_images=True,
-                extract_card_images=True,
-                video_length_limit=None  # No limit on video length
-            )
-            
-            # Save extracted data to MongoDB
-            save_extracted_tweet(tweet_id, extracted_data.model_dump())
-            logger.info(f"Saved extracted data to MongoDB for tweet {tweet_id}")
-            
-        except Exception as e:
-            logger.error(f"Error extracting data from tweet {tweet_id}: {e}")
+        # Parse the tweet data
+        tweet_data_model = TweetData.model_validate(tweet_data)
+        
+        # Extract conversation with media
+        extracted_data = extract_conversation_with_media(
+            tweet_data_model.threaded_conversation_with_injections_v2,
+            media_url_handling=MediaUrlHandling.REMOVE,
+            extract_video_thumbnail=False,
+            extract_videos=True,
+            extract_images=True,
+            extract_card_images=True,
+            video_length_limit=None  # No limit on video length
+        )
+        
+        # Save extracted data to MongoDB
+        save_extracted_tweet(tweet_id, extracted_data.model_dump())
+        logger.info(f"Saved extracted data to MongoDB for tweet {tweet_id}")
 
     def scrape_tweets(self, pending_ids: Set[str], resume_from: str = None) -> List[str]:
         """Scrape pending tweets and save them to database.
@@ -201,10 +200,16 @@ class WorkflowManager:
                     scraper.save_tweet_data(tweet_data, tweet_id)
                     
                     # Extract and save valuable data
-                    self.extract_and_save_tweet_data(tweet_id, tweet_data)
-                    
-                    # Save tweet id to sqlite database
-                    save_tweet_to_db(tweet_id)
+                    try:
+                        self.extract_and_save_tweet_data(tweet_id, tweet_data)
+                        # Only save to SQLite if extraction was successful
+                        save_tweet_to_db(tweet_id)
+                        logger.info(f"Successfully processed and saved tweet {tweet_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to extract data from tweet {tweet_id}: {e}")
+                        logger.warning(f"Skipping SQLite save for tweet {tweet_id} due to extraction failure")
+                        # Continue with next tweet instead of breaking the loop
+                        continue
                     
                     # Track processed tweet for this run
                     self.processed_tweets.append(tweet_id)
@@ -324,4 +329,4 @@ if __name__ == "__main__":
     
     # args = parser.parse_args()
     # main(use_existing_pending = True) 
-    main(use_existing_pending=True)
+    main(use_existing_pending=False)
