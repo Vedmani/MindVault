@@ -529,9 +529,16 @@ def process_all_tweet_files(
         # Skip if already processed
         tweet_id = json_file.stem
         output_file = output_dir / f"{tweet_id}_extracted.json"
-        if output_file.exists():
+        
+        try:
+            # Try to read existing file to check if processing is complete
+            with open(output_file, 'r') as f:
+                json.load(f)  # If this succeeds, file exists and is valid JSON
             logger.info(f"Skipping {tweet_id} - already processed")
             continue
+        except (FileNotFoundError, json.JSONDecodeError):
+            # File doesn't exist or is corrupted, proceed with processing
+            pass
             
         # Process the file
         result = process_single_tweet_file(
@@ -857,12 +864,19 @@ def process_all_tweet_files_with_media(
     failed_tweets = []
     
     for json_file in json_files:
-        # Skip if already processed
+        # Skip if already processed - use EAFP
         tweet_id = json_file.stem
         output_file = output_dir / f"{tweet_id}_extracted.json"
-        if output_file.exists():
+        
+        try:
+            # Try to read existing file to check if processing is complete
+            with open(output_file, 'r') as f:
+                json.load(f)  # If this succeeds, file exists and is valid JSON
             logger.info(f"Skipping {tweet_id} - already processed")
             continue
+        except (FileNotFoundError, json.JSONDecodeError):
+            # File doesn't exist or is corrupted, proceed with processing
+            pass
             
         # Process the file with media
         result = process_single_tweet_file_with_media(
