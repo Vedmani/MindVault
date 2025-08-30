@@ -259,8 +259,8 @@ if __name__ == "__main__":
 
     async def main():
         # Example usage for a single conversation
-        tweet_file = Path("/Users/vedmani/projects/MindVault/artifacts/tweet_data/1895195365269467454.json")
-        tweet_file_2 = Path("/Users/vedmani/projects/MindVault/artifacts/tweet_data/1894346156656005380.json")
+        tweet_file = Path("artifacts/tweet_data/1895195365269467454.json")
+        tweet_file_2 = Path("artifacts/tweet_data/1894346156656005380.json")
         # Method 1: Step by step with default output directory (settings.media_dir)
         conversation = process_single_tweet_file(tweet_file)
         conversation_2 = process_single_tweet_file(tweet_file_2)
@@ -272,7 +272,7 @@ if __name__ == "__main__":
             media_list.media.extend(media_list_2.media)
             # Download media to the default directory
             results = await download_tweet_media(
-                output_dir="/Users/vedmani/projects/MindVault/media",
+                output_dir="media",
                 media_list=media_list,
                 max_connections=50
             )
