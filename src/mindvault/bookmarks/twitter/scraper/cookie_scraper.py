@@ -1,5 +1,15 @@
 """Twitter scraping functionality for the MindVault application.
 
+⚠️  DEPRECATION WARNING ⚠️
+
+This module is DEPRECATED and no longer functional. Twitter has introduced a new 
+required header 'x-client-transaction-id' that breaks the existing scraping logic.
+
+The twitter-scraper library used in this module has not been updated to handle
+this new requirement, making all scraping attempts fail with authentication errors.
+
+This module should not be used for new development. Consider using PlaywrightScraper instead.
+
 This module handles scraping tweets using the Twitter API.
 """
 
