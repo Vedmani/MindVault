@@ -19,9 +19,7 @@ from mindvault.bookmarks.twitter.schema import TweetData
 from mindvault.bookmarks.twitter.extract import (
     extract_conversation_with_media,
     MediaUrlHandling,
-    ExtractedConversationWithMedia,
     ExtractedMediaList,
-    ExtractedMedia
 )
 from mindvault.bookmarks.twitter.download_tweet_media import download_tweet_media
 from mindvault.core.mongodb_utils import save_extracted_tweet, get_extracted_media_for_tweets
@@ -121,7 +119,13 @@ class WorkflowManager:
         logger.info(f"Processed tweets: {stats['processed_tweets']}")
         logger.info(f"Pending tweets: {stats['pending_tweets']}")
         
-        return finder.find_pending_tweets()
+        pending_ids = finder.find_pending_tweets()
+        
+        # Save pending tweets to artifact file
+        finder.save_pending_tweets(pending_ids, settings.pending_tweets_path)
+        logger.info(f"Saved pending tweets to {settings.pending_tweets_path}")
+        
+        return pending_ids
 
     def extract_and_save_tweet_data(self, tweet_id: str, tweet_data: dict) -> None:
         """Extract and save valuable data from tweet.
