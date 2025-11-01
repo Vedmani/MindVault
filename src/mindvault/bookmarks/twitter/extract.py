@@ -219,22 +219,22 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
         if hasattr(tweet_obj.note_tweet.note_tweet_results.result, "entity_set"):
             text = replace_urls_in_text(text, tweet_obj.note_tweet.note_tweet_results.result.entity_set)
     else:
-        text = tweet_obj.legacy.full_text.strip() if hasattr(tweet_obj, "legacy") else ""
+        text = tweet_obj.legacy.full_text.strip() if hasattr(tweet_obj, "legacy") and tweet_obj.legacy else ""  
         # Replace URLs in legacy tweet text
-        if hasattr(tweet_obj.legacy, "entities"):
+        if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "entities"):
             text = replace_urls_in_text(text, tweet_obj.legacy.entities)
     
     # Extract counts.
-    fav_count = tweet_obj.legacy.favorite_count if hasattr(tweet_obj.legacy, "favorite_count") else 0
-    reply_count = tweet_obj.legacy.reply_count if hasattr(tweet_obj.legacy, "reply_count") else 0
-    retweet_count = tweet_obj.legacy.retweet_count if hasattr(tweet_obj.legacy, "retweet_count") else 0
+    fav_count = tweet_obj.legacy.favorite_count if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "favorite_count") else 0
+    reply_count = tweet_obj.legacy.reply_count if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "reply_count") else 0
+    retweet_count = tweet_obj.legacy.retweet_count if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "retweet_count") else 0
 
     # Extract URLs from tweet entities.
     urls = []
     hashtags = []
     mentions = []
     media_list = []  # List to store Media objects
-    if hasattr(tweet_obj.legacy, "entities") and tweet_obj.legacy.entities:
+    if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "entities") and tweet_obj.legacy.entities:
         entities = tweet_obj.legacy.entities
         if getattr(entities, "urls", None):
             for url_obj in entities.urls:
@@ -252,7 +252,7 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
     # Extract media URLs and video durations from tweet entities and handle them in text
     media_urls = []
     video_durations = {}
-    if hasattr(tweet_obj.legacy, "entities") and tweet_obj.legacy.entities:
+    if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "entities") and tweet_obj.legacy.entities:
         entities = tweet_obj.legacy.entities
         if getattr(entities, "media", None):
             # First collect media URLs and video durations
@@ -267,7 +267,7 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
             text = handle_media_urls_in_text(text, entities, media_url_handling)
     
     # Get creation date
-    created_at = tweet_obj.legacy.created_at if hasattr(tweet_obj.legacy, "created_at") else ""
+    created_at = tweet_obj.legacy.created_at if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "created_at") else ""
 
     # Extract quoted tweet if available.
     quoted = None
@@ -301,17 +301,17 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
                         quoted_obj.note_tweet.note_tweet_results.result.entity_set
                     )
             else:
-                quoted_text = quoted_obj.legacy.full_text.strip() if hasattr(quoted_obj, "legacy") else ""
+                quoted_text = quoted_obj.legacy.full_text.strip() if hasattr(quoted_obj, "legacy") and quoted_obj.legacy else ""
                 # Replace URLs in quoted legacy tweet text
-                if hasattr(quoted_obj.legacy, "entities"):
+                if hasattr(quoted_obj, "legacy") and quoted_obj.legacy and hasattr(quoted_obj.legacy, "entities"):
                     quoted_text = replace_urls_in_text(quoted_text, quoted_obj.legacy.entities)
             
             quoted_username = quoted_obj.core.get_screen_name() if hasattr(quoted_obj, "core") else "Unknown User"
             quoted_actual_name = quoted_obj.core.get_user_name() if hasattr(quoted_obj, "core") else "Unknown Name"
-            quoted_created_at = quoted_obj.legacy.created_at if hasattr(quoted_obj.legacy, "created_at") else ""
+            quoted_created_at = quoted_obj.legacy.created_at if hasattr(quoted_obj, "legacy") and quoted_obj.legacy and hasattr(quoted_obj.legacy, "created_at") else ""
             quoted_link = (
                 tweet_obj.legacy.quoted_status_permalink.expanded
-                if hasattr(tweet_obj.legacy, "quoted_status_permalink") and tweet_obj.legacy.quoted_status_permalink
+                if hasattr(tweet_obj, "legacy") and tweet_obj.legacy and hasattr(tweet_obj.legacy, "quoted_status_permalink") and tweet_obj.legacy.quoted_status_permalink
                 else None
             )
             quoted_urls = []
@@ -320,7 +320,7 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
             quoted_hashtags = []
             quoted_mentions = []
             quoted_media_list = []  # List to store Media objects for quoted tweet
-            if hasattr(quoted_obj, "legacy") and quoted_obj.legacy.entities:
+            if hasattr(quoted_obj, "legacy") and quoted_obj.legacy and quoted_obj.legacy.entities:
                 q_entities = quoted_obj.legacy.entities
                 if getattr(q_entities, "urls", None):
                     for url_obj in q_entities.urls:
@@ -345,7 +345,7 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
                     for mention in q_entities.user_mentions:
                         if hasattr(mention, "screen_name"):
                             quoted_mentions.append(mention.screen_name)
-            quoted_created_at = quoted_obj.legacy.created_at if hasattr(quoted_obj.legacy, "created_at") else ""
+            quoted_created_at = quoted_obj.legacy.created_at if hasattr(quoted_obj, "legacy") and quoted_obj.legacy and hasattr(quoted_obj.legacy, "created_at") else ""
             # We combine the URLs from the text field and media.
             quoted = ExtractedQuote(
                 id=quoted_id,
