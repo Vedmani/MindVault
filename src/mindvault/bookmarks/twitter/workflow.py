@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Set, List
 import asyncio
+import threading
 
 from mindvault.bookmarks.twitter.bookmarks import BookmarksExporter
 from mindvault.core.config import settings
@@ -157,22 +158,37 @@ class WorkflowManager:
 
     def scrape_tweets(self, pending_ids: Set[str], resume_from: str = None) -> List[str]:
         """Scrape pending tweets and save them to database.
-        
+
         Args:
             pending_ids: Set of tweet IDs to scrape
             resume_from: Optional tweet ID to resume from
-            
+
         Returns:
             List of tweet IDs that were successfully processed in this run
         """
         logger.info("Starting tweet scraping")
-        
+
         # Reset processed tweets list for this run
         self.processed_tweets = []
-        
+
+        # List to track async download tasks
+        download_tasks = []
+
+        # Create a new event loop for background downloads
+        download_loop = asyncio.new_event_loop()
+
+        # Function to run event loop in background thread
+        def run_event_loop():
+            asyncio.set_event_loop(download_loop)
+            download_loop.run_forever()
+
+        # Start background thread with event loop
+        loop_thread = threading.Thread(target=run_event_loop, daemon=True)
+        loop_thread.start()
+
         # Convert pending_ids to list and sort for consistent ordering
         pending_list = sorted(list(pending_ids))
-        
+
         # Find start index if resuming
         start_idx = 0
         if resume_from:
@@ -181,17 +197,17 @@ class WorkflowManager:
                 logger.info(f"Resuming from tweet ID: {resume_from}")
             except ValueError:
                 logger.warning(f"Resume point {resume_from} not found, starting from beginning")
-        
+
         # Create temporary file for scraper
         temp_ids_file = Path("temp_pending_ids.json")
         with open(temp_ids_file, 'w', encoding='utf-8') as f:
             json.dump(pending_list[start_idx:], f)
-        
+
         try:
             scraper = PlaywrightScraper(
                 input_file=temp_ids_file,
             )
-            
+
             for tweet_id in pending_list[start_idx:]:
                 try:
                     # Skip if already in database
@@ -217,7 +233,28 @@ class WorkflowManager:
                     
                     # Track processed tweet for this run
                     self.processed_tweets.append(tweet_id)
-                    
+
+                    # Schedule media download to background event loop (non-blocking)
+                    try:
+                        media_for_tweet = get_extracted_media_for_tweets([tweet_id])
+                        if media_for_tweet:
+                            logger.info(f"Starting background media download for tweet {tweet_id}")
+                            # Schedule download coroutine to background event loop (returns immediately)
+                            task = asyncio.run_coroutine_threadsafe(
+                                download_tweet_media(
+                                    output_dir=settings.media_dir,
+                                    media_list=ExtractedMediaList(media=media_for_tweet),
+                                    max_connections=50
+                                ),
+                                download_loop
+                            )
+                            download_tasks.append((tweet_id, task))
+                        else:
+                            logger.info(f"No media found for tweet {tweet_id}")
+                    except Exception as e:
+                        logger.error(f"Error preparing media download for tweet {tweet_id}: {e}")
+                        # Continue with next tweet even if media preparation fails
+
                     # Update state after each successful tweet
                     self.save_state({"last_processed_id": tweet_id})
                     logger.info(f"Successfully processed tweet {tweet_id}")
@@ -230,7 +267,22 @@ class WorkflowManager:
         finally:
             # Clean up temporary file
             temp_ids_file.unlink(missing_ok=True)
-            
+
+            # Wait for all background downloads to complete
+            if download_tasks:
+                logger.info(f"Waiting for {len(download_tasks)} background media downloads to complete")
+                for tweet_id, task in download_tasks:
+                    try:
+                        task.result(timeout=300)  # Wait up to 5 minutes per tweet
+                        logger.info(f"Successfully downloaded media for tweet {tweet_id}")
+                    except Exception as e:
+                        logger.error(f"Background download task failed for tweet {tweet_id}: {e}")
+                logger.info("All background media downloads completed")
+
+            # Stop the event loop and wait for thread to finish
+            download_loop.call_soon_threadsafe(download_loop.stop)
+            loop_thread.join(timeout=10)
+
         return self.processed_tweets
     
     def download_media_for_tweets(self, tweet_ids: List[str], max_connections: int = 50) -> None:
@@ -300,10 +352,7 @@ class WorkflowManager:
             
             # Scrape pending tweets and get IDs of processed tweets
             processed_tweets = self.scrape_tweets(pending_ids, resume_from)
-            
-            # Download media only for tweets processed in this run
-            self.download_media_for_tweets(processed_tweets)
-            
+
             logger.info("Workflow completed successfully")
             
         except Exception as e:
