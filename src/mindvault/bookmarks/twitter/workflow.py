@@ -217,7 +217,26 @@ class WorkflowManager:
                     
                     # Track processed tweet for this run
                     self.processed_tweets.append(tweet_id)
-                    
+
+                    # Download media immediately after processing this tweet
+                    try:
+                        logger.info(f"Downloading media for tweet {tweet_id}")
+                        media_for_tweet = get_extracted_media_for_tweets([tweet_id])
+                        if media_for_tweet:
+                            asyncio.run(
+                                download_tweet_media(
+                                    output_dir=settings.media_dir,
+                                    media_list=ExtractedMediaList(media=media_for_tweet),
+                                    max_connections=50
+                                )
+                            )
+                            logger.info(f"Successfully downloaded media for tweet {tweet_id}")
+                        else:
+                            logger.info(f"No media found for tweet {tweet_id}")
+                    except Exception as e:
+                        logger.error(f"Error downloading media for tweet {tweet_id}: {e}")
+                        # Continue with next tweet even if media download fails
+
                     # Update state after each successful tweet
                     self.save_state({"last_processed_id": tweet_id})
                     logger.info(f"Successfully processed tweet {tweet_id}")
@@ -300,10 +319,7 @@ class WorkflowManager:
             
             # Scrape pending tweets and get IDs of processed tweets
             processed_tweets = self.scrape_tweets(pending_ids, resume_from)
-            
-            # Download media only for tweets processed in this run
-            self.download_media_for_tweets(processed_tweets)
-            
+
             logger.info("Workflow completed successfully")
             
         except Exception as e:
