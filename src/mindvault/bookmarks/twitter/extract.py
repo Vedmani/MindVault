@@ -78,11 +78,11 @@ def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEn
                 else:
                     text_parts.append("[MEDIA: unknown]")
         elif block_type == "header-one":
-            text_parts.append(f"\n# {block_text}")
+            text_parts.append(f"# {block_text}")
         elif block_type == "header-two":
-            text_parts.append(f"\n## {block_text}")
+            text_parts.append(f"## {block_text}")
         elif block_type == "header-three":
-            text_parts.append(f"\n### {block_text}")
+            text_parts.append(f"### {block_text}")
         elif block_type == "unordered-list-item":
             text_parts.append(f"• {block_text}")
         elif block_type == "ordered-list-item":
