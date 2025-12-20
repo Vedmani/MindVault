@@ -248,6 +248,91 @@ class Card(BaseModel):
     rest_id: str
     legacy: Optional[CardLegacy] = None
 
+
+# --- Article Schema Models ---
+
+class ArticleMediaInfo(BaseModel):
+    """Media info for an article media entity."""
+    typename: Optional[str] = Field(alias="__typename", default=None)
+    original_img_height: Optional[int] = None
+    original_img_width: Optional[int] = None
+    original_img_url: Optional[str] = None
+    color_info: Optional[Dict[str, Any]] = None
+
+
+class ArticleMediaEntity(BaseModel):
+    """A media entity in an article (image, video, etc.)."""
+    id: str
+    media_key: str
+    media_id: str
+    media_info: ArticleMediaInfo
+
+
+class ArticleContentBlock(BaseModel):
+    """A block in the article content_state (DraftJS format)."""
+    key: str
+    data: Dict[str, Any] = {}
+    entityRanges: List[Dict[str, Any]] = []
+    inlineStyleRanges: List[Dict[str, Any]] = []
+    text: str
+    type: str  # "unstyled", "atomic", "header-one", "header-two", "ordered-list-item", etc.
+
+
+class ArticleEntityMapItem(BaseModel):
+    """An item in the entityMap list."""
+    key: str
+    value: Dict[str, Any]
+
+
+class ArticleContentState(BaseModel):
+    """The content_state of an article (DraftJS format)."""
+    blocks: List[ArticleContentBlock]
+    entityMap: List[ArticleEntityMapItem] = []
+
+
+class ArticleCoverMediaInfo(BaseModel):
+    """Media info for the article cover image."""
+    typename: Optional[str] = Field(alias="__typename", default=None)
+    original_img_height: Optional[int] = None
+    original_img_width: Optional[int] = None
+    original_img_url: Optional[str] = None
+    color_info: Optional[Dict[str, Any]] = None
+
+
+class ArticleCoverMedia(BaseModel):
+    """Cover media for an article."""
+    id: str
+    media_key: str
+    media_id: str
+    media_info: ArticleCoverMediaInfo
+
+
+class ArticleResultData(BaseModel):
+    """The result data for an article."""
+    rest_id: str
+    id: str
+    title: str
+    preview_text: Optional[str] = None
+    cover_media: Optional[ArticleCoverMedia] = None
+    content_state: Optional[ArticleContentState] = None
+    media_entities: List[ArticleMediaEntity] = []
+    lifecycle_state: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ArticleResults(BaseModel):
+    """Wrapper for article results."""
+    result: ArticleResultData
+
+
+class Article(BaseModel):
+    """An article attached to a tweet."""
+    article_results: ArticleResults
+
+
+# --- End Article Schema Models ---
+
+
 class _TweetResult(BaseModel):
     typename: Literal["Tweet"] = Field(alias="__typename")
     rest_id: str
@@ -262,6 +347,7 @@ class _TweetResult(BaseModel):
     legacy: Legacy
     note_tweet: Optional[NoteTweet] = None
     card: Optional[Card] = None
+    article: Optional[Article] = None
 
 
 
@@ -278,6 +364,8 @@ class Tweet(BaseModel):
     legacy: Legacy
     note_tweet: Optional[NoteTweet] = None
     card: Optional[Card] = None
+    article: Optional[Article] = None
+
 
 class TweetWithVisibilityResult(BaseModel):
     typename: Optional[Literal["TweetWithVisibilityResults", "UserUnavailable", "Tweet"]] = Field(alias="__typename", default=None)

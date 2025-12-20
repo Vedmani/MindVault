@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Dict, Literal
+from typing import List, Optional, Any, Dict, Literal, Tuple
 from pydantic import BaseModel
 import json
 from pathlib import Path
@@ -9,7 +9,9 @@ from mindvault.bookmarks.twitter.schema import (
     ItemContent, 
     TweetTombstone,
     TweetData,
-    Media
+    Media,
+    Article,
+    ArticleMediaEntity,
 )
 from mindvault.core.config import settings
 import uuid
@@ -19,6 +21,85 @@ import uuid
 #TODO: There might be something wrong with the card data extraction.
 
 logger = get_logger(__name__)
+
+
+def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEntity]]:
+    """Extract text content from a Twitter Article with inline media placeholders.
+    
+    Args:
+        article: The Article object from a tweet
+        
+    Returns:
+        Tuple of (extracted_text, list_of_media_entities)
+    """
+    article_data = article.article_results.result
+    content_state = article_data.content_state
+    
+    if content_state is None:
+        # Fallback to preview_text if no content_state
+        return article_data.title + "\n\n" + (article_data.preview_text or ""), []
+    
+    # Build entity map lookup: key -> media_id
+    entity_map: Dict[str, str] = {}
+    for entity_item in content_state.entityMap:
+        key = entity_item.key
+        value = entity_item.value
+        if value.get("type") == "MEDIA":
+            media_items = value.get("data", {}).get("mediaItems", [])
+            if media_items:
+                # Use the first media item's media_id
+                entity_map[key] = media_items[0].get("mediaId", "")
+    
+    # Build media_id -> url lookup from media_entities
+    media_id_to_url: Dict[str, str] = {}
+    for me in article_data.media_entities:
+        if me.media_info and me.media_info.original_img_url:
+            media_id_to_url[me.media_id] = me.media_info.original_img_url
+    
+    # Process blocks to build text
+    text_parts = []
+    
+    # Add title first
+    text_parts.append(f"# {article_data.title}")
+    text_parts.append("")  # Empty line after title
+    
+    for block in content_state.blocks:
+        block_type = block.type
+        block_text = block.text.strip()
+        
+        if block_type == "atomic":
+            # This is a media block - find the media URL
+            if block.entityRanges:
+                entity_key = str(block.entityRanges[0].get("key", ""))
+                media_id = entity_map.get(entity_key, "")
+                media_url = media_id_to_url.get(media_id, "")
+                if media_url:
+                    text_parts.append(f"[MEDIA: {media_url}]")
+                else:
+                    text_parts.append("[MEDIA: unknown]")
+        elif block_type == "header-one":
+            text_parts.append(f"\n# {block_text}")
+        elif block_type == "header-two":
+            text_parts.append(f"\n## {block_text}")
+        elif block_type == "header-three":
+            text_parts.append(f"\n### {block_text}")
+        elif block_type == "unordered-list-item":
+            text_parts.append(f"• {block_text}")
+        elif block_type == "ordered-list-item":
+            text_parts.append(f"- {block_text}")
+        elif block_type == "blockquote":
+            text_parts.append(f"> {block_text}")
+        elif block_type == "unstyled":
+            if block_text:
+                text_parts.append(block_text)
+        else:
+            # Other block types - just add the text
+            if block_text:
+                text_parts.append(block_text)
+    
+    return "\n".join(text_parts), article_data.media_entities
+
+
 
 class ExtractedMedia(BaseModel):
     tweet_id: str
@@ -212,8 +293,15 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
     username = tweet_obj.core.get_screen_name() if hasattr(tweet_obj, "core") else "Unknown User"
     actual_name = tweet_obj.core.get_user_name() if hasattr(tweet_obj, "core") else "Unknown Name"
 
-    # Determine the tweet text using note_tweet logic if available.
-    if tweet_obj.note_tweet is not None:
+    # Variable to hold article media entities if this is an article tweet
+    article_media_entities: List[ArticleMediaEntity] = []
+
+    # Determine the tweet text - check for article first, then note_tweet, then legacy
+    if hasattr(tweet_obj, "article") and tweet_obj.article is not None:
+        # This is an article tweet - extract article content with media placeholders
+        text, article_media_entities = _extract_article_content(tweet_obj.article)
+        logger.info(f"Extracted article tweet {tweet_id} with {len(article_media_entities)} media entities")
+    elif tweet_obj.note_tweet is not None:
         text = tweet_obj.note_tweet.note_tweet_results.result.text
         # Replace URLs in note tweet text if entities exist in note_tweet
         if hasattr(tweet_obj.note_tweet.note_tweet_results.result, "entity_set"):
