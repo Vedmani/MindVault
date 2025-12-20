@@ -89,11 +89,8 @@ def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEn
             text_parts.append(f"- {block_text}")
         elif block_type == "blockquote":
             text_parts.append(f"> {block_text}")
-        elif block_type == "unstyled":
-            if block_text:
-                text_parts.append(block_text)
         else:
-            # Other block types - just add the text
+            # Handle unstyled and other block types - just add the text
             if block_text:
                 text_parts.append(block_text)
     
@@ -167,6 +164,8 @@ class ExtractedTweet(BaseModel):
     hashtags: List[str] = []   # Hashtags used in the tweet
     mentions: List[str] = []   # User mentions in the tweet (@username)
     media: List[Media]
+    article_media: List[ArticleMediaEntity] = []  # Media entities from Twitter Articles
+
 
 
 class ExtractedConversation(BaseModel):
@@ -471,7 +470,8 @@ def extract_tweet_data(item_content: ItemContent, media_url_handling: MediaUrlHa
         card=card,
         hashtags=hashtags,
         mentions=mentions,
-        media=media_list  # Add the extracted media list to the ExtractedTweet
+        media=media_list,
+        article_media=article_media_entities  # Add article media entities
     )
 
 # Main extractor function: given a ThreadedConversationWithInjectionsV2, extract the conversation.
@@ -727,6 +727,18 @@ def extract_media_info_from_tweet(
     # Process media from quoted tweet if it exists
     if tweet.quoted_tweet and hasattr(tweet.quoted_tweet, 'media') and tweet.quoted_tweet.media:
         process_media(tweet.quoted_tweet, tweet.quoted_tweet.id)
+    
+    # Process article media if present (from Twitter Articles)
+    if hasattr(tweet, 'article_media') and tweet.article_media and extract_images:
+        for article_me in tweet.article_media:
+            if article_me.media_info and article_me.media_info.original_img_url:
+                _media = ExtractedMedia(
+                    tweet_id=tweet.id,
+                    media_id=article_me.media_id,
+                    media_url=article_me.media_info.original_img_url,
+                    media_type="image",  # Article media are images
+                )
+                media_list.append(_media)
     
     return ExtractedMediaList(media=media_list)
 

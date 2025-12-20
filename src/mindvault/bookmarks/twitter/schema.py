@@ -290,21 +290,13 @@ class ArticleContentState(BaseModel):
     entityMap: List[ArticleEntityMapItem] = []
 
 
-class ArticleCoverMediaInfo(BaseModel):
-    """Media info for the article cover image."""
-    typename: Optional[str] = Field(alias="__typename", default=None)
-    original_img_height: Optional[int] = None
-    original_img_width: Optional[int] = None
-    original_img_url: Optional[str] = None
-    color_info: Optional[Dict[str, Any]] = None
-
-
 class ArticleCoverMedia(BaseModel):
     """Cover media for an article."""
     id: str
     media_key: str
     media_id: str
-    media_info: ArticleCoverMediaInfo
+    media_info: ArticleMediaInfo  # Reuse ArticleMediaInfo instead of duplicate
+
 
 
 class ArticleResultData(BaseModel):
