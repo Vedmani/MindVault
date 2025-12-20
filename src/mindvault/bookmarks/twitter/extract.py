@@ -53,8 +53,12 @@ def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEn
     # Build media_id -> url lookup from media_entities
     media_id_to_url: Dict[str, str] = {}
     for me in article_data.media_entities:
-        if me.media_info and me.media_info.original_img_url:
-            media_id_to_url[me.media_id] = me.media_info.original_img_url
+        if me.media_info:
+            if me.media_info.is_image() and me.media_info.original_img_url:
+                media_id_to_url[me.media_id] = me.media_info.original_img_url
+            elif me.media_info.is_video() and me.media_info.preview_image:
+                # For videos, use preview/thumbnail URL in text placeholder
+                media_id_to_url[me.media_id] = me.media_info.preview_image.original_img_url
     
     # Process blocks to build text
     text_parts = []
@@ -66,17 +70,52 @@ def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEn
     for block in content_state.blocks:
         block_type = block.type
         block_text = block.text.strip()
-        
+
         if block_type == "atomic":
-            # This is a media block - find the media URL
+            # Atomic blocks can be: MEDIA, MARKDOWN, DIVIDER, or TWEET
             if block.entityRanges:
                 entity_key = str(block.entityRanges[0].get("key", ""))
-                media_id = entity_map.get(entity_key, "")
-                media_url = media_id_to_url.get(media_id, "")
-                if media_url:
-                    text_parts.append(f"[MEDIA: {media_url}]")
+
+                # Find the entity to determine its type
+                entity_item = next((e for e in content_state.entityMap if e.key == entity_key), None)
+
+                if entity_item:
+                    entity_type = entity_item.value.get("type", "")
+
+                    if entity_type == "MEDIA":
+                        # This is actual media (image/video)
+                        media_id = entity_map.get(entity_key, "")
+                        media_url = media_id_to_url.get(media_id, "")
+                        if media_url:
+                            text_parts.append(f"![Media]({media_url})")
+                        else:
+                            text_parts.append("![Media](unknown)")
+
+                    elif entity_type == "MARKDOWN":
+                        # This is a code snippet/markdown block
+                        markdown_content = entity_item.value.get("data", {}).get("markdown", "")
+                        if markdown_content:
+                            text_parts.append(f"\n{markdown_content}\n")
+                        else:
+                            text_parts.append("[CODE SNIPPET]")
+
+                    elif entity_type == "DIVIDER":
+                        # This is a horizontal divider
+                        text_parts.append("\n---\n")
+
+                    elif entity_type == "TWEET":
+                        # This is an embedded tweet
+                        tweet_id = entity_item.value.get("data", {}).get("tweetId", "")
+                        if tweet_id:
+                            text_parts.append(f"[Embedded Tweet: https://x.com/i/status/{tweet_id}]")
+                        else:
+                            text_parts.append("[Embedded Tweet]")
+
+                    else:
+                        # Unknown atomic type
+                        text_parts.append(f"[{entity_type}]")
                 else:
-                    text_parts.append("[MEDIA: unknown]")
+                    text_parts.append("[UNKNOWN ELEMENT]")
         elif block_type == "header-one":
             text_parts.append(f"# {block_text}")
         elif block_type == "header-two":
@@ -729,16 +768,58 @@ def extract_media_info_from_tweet(
         process_media(tweet.quoted_tweet, tweet.quoted_tweet.id)
     
     # Process article media if present (from Twitter Articles)
-    if hasattr(tweet, 'article_media') and tweet.article_media and extract_images:
+    if hasattr(tweet, 'article_media') and tweet.article_media:
         for article_me in tweet.article_media:
-            if article_me.media_info and article_me.media_info.original_img_url:
-                _media = ExtractedMedia(
-                    tweet_id=tweet.id,
-                    media_id=article_me.media_id,
-                    media_url=article_me.media_info.original_img_url,
-                    media_type="image",  # Article media are images
-                )
-                media_list.append(_media)
+            media_info = article_me.media_info
+
+            # Handle article images
+            if media_info.is_image() and extract_images:
+                if media_info.original_img_url:
+                    _media = ExtractedMedia(
+                        tweet_id=tweet.id,
+                        media_id=article_me.media_id,
+                        media_url=media_info.original_img_url,
+                        media_type="image",
+                    )
+                    media_list.append(_media)
+
+            # Handle article videos
+            elif media_info.is_video() and extract_videos:
+                # Calculate video duration
+                if media_info.duration_millis is not None:
+                    video_duration = round(media_info.duration_millis / 1000)
+                else:
+                    video_duration = 0
+
+                # Apply video length filter (if configured)
+                if video_length_limit is not None and video_duration > video_length_limit:
+                    logger.info(
+                        f"Skipping article video in tweet {tweet.id} with duration "
+                        f"{video_duration}s (exceeds limit of {video_length_limit}s)"
+                    )
+                    continue
+
+                # Select highest bitrate variant (same as standard tweets, line 696-700)
+                if media_info.variants:
+                    sorted_variants = sorted(
+                        media_info.variants,
+                        key=lambda x: x.bitrate if x.bitrate is not None else 0,
+                        reverse=True,
+                    )
+
+                    _media = ExtractedMedia(
+                        tweet_id=tweet.id,
+                        media_id=article_me.media_id,
+                        media_url=sorted_variants[0].url,
+                        thumbnail_url=(
+                            media_info.preview_image.original_img_url
+                            if extract_video_thumbnail and media_info.preview_image
+                            else None
+                        ),
+                        media_type="video",
+                        media_duration=video_duration
+                    )
+                    media_list.append(_media)
     
     return ExtractedMediaList(media=media_list)
 

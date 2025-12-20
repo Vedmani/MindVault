@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from typing import Any, List, Optional, Literal, Union, Dict
 from pathlib import Path
 import json
@@ -251,13 +251,45 @@ class Card(BaseModel):
 
 # --- Article Schema Models ---
 
+class ArticleAspectRatio(BaseModel):
+    """Aspect ratio for article videos (format: {numerator, denominator})."""
+    numerator: int
+    denominator: int
+
+
+class ArticlePreviewImage(BaseModel):
+    """Preview image/thumbnail for article videos."""
+    original_img_url: str
+    original_img_height: int
+    original_img_width: int
+    color_info: Optional[Dict[str, Any]] = None
+
+
 class ArticleMediaInfo(BaseModel):
-    """Media info for an article media entity."""
-    typename: Optional[str] = Field(alias="__typename", default=None)
+    """Media info for article media (supports images and videos)."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    typename: str = Field(alias="__typename")  # Required: "ApiImage" or "ApiVideo"
+
+    # Image-specific fields (present when typename == "ApiImage")
     original_img_height: Optional[int] = None
     original_img_width: Optional[int] = None
     original_img_url: Optional[str] = None
     color_info: Optional[Dict[str, Any]] = None
+
+    # Video-specific fields (present when typename == "ApiVideo")
+    aspect_ratio: Optional[ArticleAspectRatio] = None
+    duration_millis: Optional[int] = None
+    preview_image: Optional[ArticlePreviewImage] = None
+    variants: Optional[List[VideoVariant]] = None  # Reuse existing VideoVariant model
+
+    def is_video(self) -> bool:
+        """Check if this media is a video."""
+        return self.typename == "ApiVideo"
+
+    def is_image(self) -> bool:
+        """Check if this media is an image."""
+        return self.typename == "ApiImage"
 
 
 class ArticleMediaEntity(BaseModel):
