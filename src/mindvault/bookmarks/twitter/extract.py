@@ -1,4 +1,4 @@
-from typing import List, Optional, Any, Dict, Literal, Tuple
+from typing import List, Optional, Any, Dict, Literal, Tuple, Union
 from pydantic import BaseModel
 import json
 from pathlib import Path
@@ -7,6 +7,7 @@ from mindvault.core.logger_setup import get_logger
 from mindvault.bookmarks.twitter.schema import (
     ThreadedConversationWithInjectionsV2,
     ItemContent,
+    ItemContentInThread,
     TweetTombstone,
     TweetData,
     Media,
@@ -291,11 +292,11 @@ def handle_media_urls_in_text(
 
 # Helper function to extract the essential data from a tweet contained in an ItemContent
 def extract_tweet_data(
-    item_content: ItemContent,
+    item_content: Union[ItemContent, ItemContentInThread],
     media_url_handling: MediaUrlHandling = MediaUrlHandling.KEEP,
 ) -> ExtractedTweet:
-    # Fallback if no tweet_results
-    if item_content.tweet_results is None:
+    # Fallback if no tweet_results or empty tweet_results (result is None)
+    if item_content.tweet_results is None or item_content.tweet_results.result is None:
         return ExtractedTweet(
             id="",
             text="[No tweet text available]",

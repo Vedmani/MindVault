@@ -409,21 +409,54 @@ class TweetTombstone(BaseModel):
 
 
 class TweetResult(BaseModel):
+    """Strict tweet result model - requires result field.
+
+    Used for main tweets where we always expect valid tweet data.
+    """
     result: Union[_TweetResult, TweetWithVisibilityResult, TweetTombstone]
     is_note_tweet: bool = Field(default=False)
 
-    # This might slow down the code alot
     @model_validator(mode="after")
     def set_note_tweet_flag(self):
         # Check if result is _TweetResult or inside TweetWithVisibilityResult
         tweet_result = (
-            self.result if isinstance(self.result, _TweetResult) 
+            self.result if isinstance(self.result, _TweetResult)
             else self.result.tweet if isinstance(self.result, TweetWithVisibilityResult)
             else None
         )
-        
+
         self.is_note_tweet = (
-            tweet_result is not None 
+            tweet_result is not None
+            and tweet_result.note_tweet is not None
+        )
+        return self
+
+
+class TweetResultInThread(BaseModel):
+    """Lenient tweet result model - allows empty/missing result.
+
+    Used for conversation thread items where Twitter sometimes returns
+    empty tweet_results (e.g., deleted replies, unavailable tweets).
+    This only occurs in conversation threads of article tweets.
+    """
+    result: Optional[Union[_TweetResult, TweetWithVisibilityResult, TweetTombstone]] = None
+    is_note_tweet: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def set_note_tweet_flag(self):
+        # Handle empty tweet_results (result is None)
+        if self.result is None:
+            return self
+
+        # Check if result is _TweetResult or inside TweetWithVisibilityResult
+        tweet_result = (
+            self.result if isinstance(self.result, _TweetResult)
+            else self.result.tweet if isinstance(self.result, TweetWithVisibilityResult)
+            else None
+        )
+
+        self.is_note_tweet = (
+            tweet_result is not None
             and tweet_result.note_tweet is not None
         )
         return self
@@ -452,8 +485,37 @@ class ItemContent(BaseModel):
                 )
         return self
 
+
+class ItemContentInThread(BaseModel):
+    """Lenient ItemContent for conversation thread items.
+
+    Uses TweetResultInThread which allows empty tweet_results.result.
+    Twitter returns empty tweet_results for some items in conversation threads
+    (e.g., deleted replies, unavailable tweets in article tweet threads).
+    """
+    itemType: Literal[
+        "TimelineTweet", "TimelineTimelineModule", "TimelineTimelineCursor"
+    ]
+    typename: Optional[
+        Literal["TimelineTweet", "TimelineTimelineModule", "TimelineTimelineCursor"]
+    ] = Field(alias="__typename")
+    tweet_results: Optional[TweetResultInThread] = None
+    tweetDisplayType: Optional[Literal["Tweet", "SelfThread"]] = None
+
+    @model_validator(mode="after")
+    def validate_fields(self):
+        # For thread items, we allow empty tweet_results (result=None)
+        # but tweetDisplayType is still required for TimelineTweet
+        if self.itemType == "TimelineTweet":
+            if self.tweetDisplayType is None:
+                raise ValueError(
+                    "tweetDisplayType is required when itemType is 'TimelineTweet'"
+                )
+        return self
+
+
 class ItemDictFromItemsList(BaseModel):
-    itemContent: ItemContent
+    itemContent: ItemContentInThread  # Use lenient model for thread items
     clientEventInfo: Dict[str, Any]
 
     
@@ -521,9 +583,9 @@ class TweetData(BaseModel):
 
     def __str__(self):
         #TODO: This is not perfect yet, check for edge cases
-        # Helper function to extract tweet text from an ItemContent.
-        def extract_tweet_text(item_content: ItemContent) -> tuple[str, str, Optional[tuple[str, str, str]]]:
-            if item_content.tweet_results is None:
+        # Helper function to extract tweet text from an ItemContent or ItemContentInThread.
+        def extract_tweet_text(item_content: Union[ItemContent, 'ItemContentInThread']) -> tuple[str, str, Optional[tuple[str, str, str]]]:
+            if item_content.tweet_results is None or item_content.tweet_results.result is None:
                 return "[No tweet text available]", "", None
             tweet_result = item_content.tweet_results
             result = tweet_result.result
