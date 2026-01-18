@@ -1,0 +1,18 @@
+services:
+  mongodb:
+    image: mongo:8
+    container_name: mindvault-mongodb
+    restart: unless-stopped
+    ports:
+      # Bind to 0.0.0.0 to allow LAN access (all network interfaces)
+      # Use 127.0.0.1:27017:27017 if you want localhost-only access
+      - "0.0.0.0:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: mindvault
+    volumes:
+      # Store data in ~/.mindvault/mongodb (cross-platform using $HOME)
+      - ${HOME}/.mindvault/mongodb:/data/db
+    # Allow connections from any IP (required for LAN access)
+    command: ["mongod", "--bind_ip_all"]
