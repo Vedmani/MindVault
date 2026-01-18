@@ -30,10 +30,9 @@ class WorkflowManager:
     """Manages the entire workflow of the MindVault Twitter application.
     
     This class orchestrates the process of exporting bookmarks, finding pending tweets,
-    and scraping tweet data while maintaining state for recovery.
+    and scraping tweet data.
     
     Attributes:
-        state_file: Path to the file storing workflow state
         use_existing_pending: Whether to use existing pending tweets file
     """
     
@@ -43,31 +42,10 @@ class WorkflowManager:
         Args:
             use_existing_pending: If True, uses existing pending_tweets.json instead of finding pending tweets
         """
-        self.state_file = Path("workflow_state.json")
         self.use_existing_pending = use_existing_pending
         self.processed_tweets = []  # Track tweets processed in current run
         settings.setup_directories()
         create_database()
-
-    def save_state(self, current_state: dict) -> None:
-        """Save workflow state to file.
-        
-        Args:
-            current_state: Dictionary containing current workflow state
-        """
-        with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(current_state, f, indent=2)
-
-    def load_state(self) -> dict:
-        """Load workflow state from file.
-        
-        Returns:
-            Dictionary containing saved workflow state
-        """
-        if self.state_file.exists():
-            with open(self.state_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
 
     def export_bookmarks(self) -> Path:
         """Export bookmarks and save tweet IDs.
@@ -155,12 +133,11 @@ class WorkflowManager:
         save_extracted_tweet(tweet_id, extracted_data.model_dump())
         logger.info(f"Saved extracted data to MongoDB for tweet {tweet_id}")
 
-    def scrape_tweets(self, pending_ids: Set[str], resume_from: str = None) -> List[str]:
+    def scrape_tweets(self, pending_ids: Set[str]) -> List[str]:
         """Scrape pending tweets and save them to database.
         
         Args:
             pending_ids: Set of tweet IDs to scrape
-            resume_from: Optional tweet ID to resume from
             
         Returns:
             List of tweet IDs that were successfully processed in this run
@@ -171,28 +148,22 @@ class WorkflowManager:
         self.processed_tweets = []
         
         # Convert pending_ids to list and sort for consistent ordering
+        # We process ALL pending tweets - the database check below handles deduplication
         pending_list = sorted(list(pending_ids))
         
-        # Find start index if resuming
-        start_idx = 0
-        if resume_from:
-            try:
-                start_idx = pending_list.index(resume_from)
-                logger.info(f"Resuming from tweet ID: {resume_from}")
-            except ValueError:
-                logger.warning(f"Resume point {resume_from} not found, starting from beginning")
+        logger.info(f"Processing {len(pending_list)} pending tweets")
         
         # Create temporary file for scraper
         temp_ids_file = Path("temp_pending_ids.json")
         with open(temp_ids_file, 'w', encoding='utf-8') as f:
-            json.dump(pending_list[start_idx:], f)
+            json.dump(pending_list, f)
         
         try:
             scraper = PlaywrightScraper(
                 input_file=temp_ids_file,
             )
             
-            for tweet_id in pending_list[start_idx:]:
+            for tweet_id in pending_list:
                 try:
                     # Skip if already in database
                     if get_tweet_by_id(tweet_id):
@@ -217,9 +188,6 @@ class WorkflowManager:
                     
                     # Track processed tweet for this run
                     self.processed_tweets.append(tweet_id)
-                    
-                    # Update state after each successful tweet
-                    self.save_state({"last_processed_id": tweet_id})
                     logger.info(f"Successfully processed tweet {tweet_id}")
                     
                 except Exception as e:
@@ -274,10 +242,6 @@ class WorkflowManager:
     def run(self) -> None:
         """Run the complete workflow."""
         try:
-            # Check for existing state
-            state = self.load_state()
-            resume_from = state.get("last_processed_id")
-            
             # Get pending tweets
             if self.use_existing_pending:
                 try:
@@ -299,7 +263,7 @@ class WorkflowManager:
                 return
             
             # Scrape pending tweets and get IDs of processed tweets
-            processed_tweets = self.scrape_tweets(pending_ids, resume_from)
+            processed_tweets = self.scrape_tweets(pending_ids)
             
             # Download media only for tweets processed in this run
             self.download_media_for_tweets(processed_tweets)
@@ -333,4 +297,4 @@ if __name__ == "__main__":
     
     # args = parser.parse_args()
     # main(use_existing_pending = True) 
-    main(use_existing_pending=False)
+    main(use_existing_pending=True)
