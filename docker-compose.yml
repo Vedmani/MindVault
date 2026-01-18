@@ -8,9 +8,8 @@ services:
       # Use 127.0.0.1:27017:27017 if you want localhost-only access
       - "0.0.0.0:27017:27017"
     environment:
-      # Uncomment and set these for authentication
-      # MONGO_INITDB_ROOT_USERNAME: admin
-      # MONGO_INITDB_ROOT_PASSWORD: changeme
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
       MONGO_INITDB_DATABASE: mindvault
     volumes:
       # Store data in ~/.mindvault/mongodb (cross-platform using $HOME)
