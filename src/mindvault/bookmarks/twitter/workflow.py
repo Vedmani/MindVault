@@ -297,4 +297,4 @@ if __name__ == "__main__":
     
     # args = parser.parse_args()
     # main(use_existing_pending = True) 
-    main(use_existing_pending=True)
+    main(use_existing_pending=False)
