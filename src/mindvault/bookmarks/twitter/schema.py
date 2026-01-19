@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 from typing import Any, List, Optional, Literal, Union, Dict
 from pathlib import Path
 import json
@@ -248,6 +248,115 @@ class Card(BaseModel):
     rest_id: str
     legacy: Optional[CardLegacy] = None
 
+
+# --- Article Schema Models ---
+
+class ArticleAspectRatio(BaseModel):
+    """Aspect ratio for article videos (format: {numerator, denominator})."""
+    numerator: int
+    denominator: int
+
+
+class ArticlePreviewImage(BaseModel):
+    """Preview image/thumbnail for article videos."""
+    original_img_url: str
+    original_img_height: int
+    original_img_width: int
+    color_info: Optional[Dict[str, Any]] = None
+
+
+class ArticleMediaInfo(BaseModel):
+    """Media info for article media (supports images and videos)."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    typename: str = Field(alias="__typename")  # Required: "ApiImage" or "ApiVideo"
+
+    # Image-specific fields (present when typename == "ApiImage")
+    original_img_height: Optional[int] = None
+    original_img_width: Optional[int] = None
+    original_img_url: Optional[str] = None
+    color_info: Optional[Dict[str, Any]] = None
+
+    # Video-specific fields (present when typename == "ApiVideo")
+    aspect_ratio: Optional[ArticleAspectRatio] = None
+    duration_millis: Optional[int] = None
+    preview_image: Optional[ArticlePreviewImage] = None
+    variants: Optional[List[VideoVariant]] = None  # Reuse existing VideoVariant model
+
+    def is_video(self) -> bool:
+        """Check if this media is a video."""
+        return self.typename == "ApiVideo"
+
+    def is_image(self) -> bool:
+        """Check if this media is an image."""
+        return self.typename == "ApiImage"
+
+
+class ArticleMediaEntity(BaseModel):
+    """A media entity in an article (image, video, etc.)."""
+    id: str
+    media_key: str
+    media_id: str
+    media_info: ArticleMediaInfo
+
+
+class ArticleContentBlock(BaseModel):
+    """A block in the article content_state (DraftJS format)."""
+    key: str
+    data: Dict[str, Any] = {}
+    entityRanges: List[Dict[str, Any]] = []
+    inlineStyleRanges: List[Dict[str, Any]] = []
+    text: str
+    type: str  # "unstyled", "atomic", "header-one", "header-two", "ordered-list-item", etc.
+
+
+class ArticleEntityMapItem(BaseModel):
+    """An item in the entityMap list."""
+    key: str
+    value: Dict[str, Any]
+
+
+class ArticleContentState(BaseModel):
+    """The content_state of an article (DraftJS format)."""
+    blocks: List[ArticleContentBlock]
+    entityMap: List[ArticleEntityMapItem] = []
+
+
+class ArticleCoverMedia(BaseModel):
+    """Cover media for an article."""
+    id: str
+    media_key: str
+    media_id: str
+    media_info: ArticleMediaInfo  # Reuse ArticleMediaInfo instead of duplicate
+
+
+
+class ArticleResultData(BaseModel):
+    """The result data for an article."""
+    rest_id: str
+    id: str
+    title: str
+    preview_text: Optional[str] = None
+    cover_media: Optional[ArticleCoverMedia] = None
+    content_state: Optional[ArticleContentState] = None
+    media_entities: List[ArticleMediaEntity] = []
+    lifecycle_state: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class ArticleResults(BaseModel):
+    """Wrapper for article results."""
+    result: ArticleResultData
+
+
+class Article(BaseModel):
+    """An article attached to a tweet."""
+    article_results: ArticleResults
+
+
+# --- End Article Schema Models ---
+
+
 class _TweetResult(BaseModel):
     typename: Literal["Tweet"] = Field(alias="__typename")
     rest_id: str
@@ -262,6 +371,7 @@ class _TweetResult(BaseModel):
     legacy: Legacy
     note_tweet: Optional[NoteTweet] = None
     card: Optional[Card] = None
+    article: Optional[Article] = None
 
 
 
@@ -278,6 +388,8 @@ class Tweet(BaseModel):
     legacy: Legacy
     note_tweet: Optional[NoteTweet] = None
     card: Optional[Card] = None
+    article: Optional[Article] = None
+
 
 class TweetWithVisibilityResult(BaseModel):
     typename: Optional[Literal["TweetWithVisibilityResults", "UserUnavailable", "Tweet"]] = Field(alias="__typename", default=None)
@@ -297,21 +409,54 @@ class TweetTombstone(BaseModel):
 
 
 class TweetResult(BaseModel):
+    """Strict tweet result model - requires result field.
+
+    Used for main tweets where we always expect valid tweet data.
+    """
     result: Union[_TweetResult, TweetWithVisibilityResult, TweetTombstone]
     is_note_tweet: bool = Field(default=False)
 
-    # This might slow down the code alot
     @model_validator(mode="after")
     def set_note_tweet_flag(self):
         # Check if result is _TweetResult or inside TweetWithVisibilityResult
         tweet_result = (
-            self.result if isinstance(self.result, _TweetResult) 
+            self.result if isinstance(self.result, _TweetResult)
             else self.result.tweet if isinstance(self.result, TweetWithVisibilityResult)
             else None
         )
-        
+
         self.is_note_tweet = (
-            tweet_result is not None 
+            tweet_result is not None
+            and tweet_result.note_tweet is not None
+        )
+        return self
+
+
+class TweetResultInThread(BaseModel):
+    """Lenient tweet result model - allows empty/missing result.
+
+    Used for conversation thread items where Twitter sometimes returns
+    empty tweet_results (e.g., deleted replies, unavailable tweets).
+    This only occurs in conversation threads of article tweets.
+    """
+    result: Optional[Union[_TweetResult, TweetWithVisibilityResult, TweetTombstone]] = None
+    is_note_tweet: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def set_note_tweet_flag(self):
+        # Handle empty tweet_results (result is None)
+        if self.result is None:
+            return self
+
+        # Check if result is _TweetResult or inside TweetWithVisibilityResult
+        tweet_result = (
+            self.result if isinstance(self.result, _TweetResult)
+            else self.result.tweet if isinstance(self.result, TweetWithVisibilityResult)
+            else None
+        )
+
+        self.is_note_tweet = (
+            tweet_result is not None
             and tweet_result.note_tweet is not None
         )
         return self
@@ -340,8 +485,37 @@ class ItemContent(BaseModel):
                 )
         return self
 
+
+class ItemContentInThread(BaseModel):
+    """Lenient ItemContent for conversation thread items.
+
+    Uses TweetResultInThread which allows empty tweet_results.result.
+    Twitter returns empty tweet_results for some items in conversation threads
+    (e.g., deleted replies, unavailable tweets in article tweet threads).
+    """
+    itemType: Literal[
+        "TimelineTweet", "TimelineTimelineModule", "TimelineTimelineCursor"
+    ]
+    typename: Optional[
+        Literal["TimelineTweet", "TimelineTimelineModule", "TimelineTimelineCursor"]
+    ] = Field(alias="__typename")
+    tweet_results: Optional[TweetResultInThread] = None
+    tweetDisplayType: Optional[Literal["Tweet", "SelfThread"]] = None
+
+    @model_validator(mode="after")
+    def validate_fields(self):
+        # For thread items, we allow empty tweet_results (result=None)
+        # but tweetDisplayType is still required for TimelineTweet
+        if self.itemType == "TimelineTweet":
+            if self.tweetDisplayType is None:
+                raise ValueError(
+                    "tweetDisplayType is required when itemType is 'TimelineTweet'"
+                )
+        return self
+
+
 class ItemDictFromItemsList(BaseModel):
-    itemContent: ItemContent
+    itemContent: ItemContentInThread  # Use lenient model for thread items
     clientEventInfo: Dict[str, Any]
 
     
@@ -409,9 +583,9 @@ class TweetData(BaseModel):
 
     def __str__(self):
         #TODO: This is not perfect yet, check for edge cases
-        # Helper function to extract tweet text from an ItemContent.
-        def extract_tweet_text(item_content: ItemContent) -> tuple[str, str, Optional[tuple[str, str, str]]]:
-            if item_content.tweet_results is None:
+        # Helper function to extract tweet text from an ItemContent or ItemContentInThread.
+        def extract_tweet_text(item_content: Union[ItemContent, 'ItemContentInThread']) -> tuple[str, str, Optional[tuple[str, str, str]]]:
+            if item_content.tweet_results is None or item_content.tweet_results.result is None:
                 return "[No tweet text available]", "", None
             tweet_result = item_content.tweet_results
             result = tweet_result.result

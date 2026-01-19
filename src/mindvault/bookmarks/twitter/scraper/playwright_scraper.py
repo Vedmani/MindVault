@@ -144,7 +144,7 @@ class PlaywrightScraper(BaseTweetScraper):
         with sync_playwright() as playwright:
             try:
                 # Connect to the existing Chrome instance via the debugging port
-                browser = playwright.chromium.connect_over_cdp(f"http://localhost:{self.chrome_debug_port}")
+                browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{self.chrome_debug_port}")
                 logger.debug(f"Successfully connected to Chrome over CDP on port {self.chrome_debug_port}")
 
                 # Get the default context or create a new one if needed
