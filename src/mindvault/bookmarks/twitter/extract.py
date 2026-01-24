@@ -38,7 +38,10 @@ def _extract_article_content(article: Article) -> Tuple[str, List[ArticleMediaEn
 
     if content_state is None:
         # Fallback to preview_text if no content_state
-        return article_data.title + "\n\n" + (article_data.preview_text or ""), []
+        return (
+            article_data.title + "\n\n" + (article_data.preview_text or ""),
+            article_data.media_entities,
+        )
 
     # Build entity map lookup: key -> media_id
     entity_map: Dict[str, str] = {}
