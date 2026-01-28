@@ -16,3 +16,21 @@ services:
       - ${HOME}/.mindvault/mongodb:/data/db
     # Allow connections from any IP (required for LAN access)
     command: ["mongod", "--bind_ip_all"]
+
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: mindvault-rustfs
+    restart: unless-stopped
+    ports:
+      # Bind to 0.0.0.0 to allow LAN access (all network interfaces)
+      # Use 127.0.0.1:9000:9000 and 127.0.0.1:9001:9001 if you want localhost-only access
+      - "0.0.0.0:9000:9000"   # S3 API
+      - "0.0.0.0:9001:9001"   # Web Console
+    environment:
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      # Store data in ~/.mindvault/rustfs (cross-platform using $HOME)
+      - ${HOME}/.mindvault/rustfs:/data
+    command: ["/data"]

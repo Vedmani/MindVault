@@ -22,6 +22,7 @@ from mindvault.bookmarks.twitter.extract import (
     ExtractedMediaList,
 )
 from mindvault.bookmarks.twitter.download_tweet_media import download_tweet_media
+from mindvault.bookmarks.twitter.download_tweet_media_rustfs import download_tweet_media_to_rustfs
 from mindvault.core.mongodb_utils import save_extracted_tweet, get_extracted_media_for_tweets
 
 logger = get_logger(__name__)
@@ -224,10 +225,9 @@ class WorkflowManager:
                 
             logger.info(f"Found {len(all_media)} media items to download")
             
-            # Download media
+            # Download media and upload to RustFS
             asyncio.run(
-                download_tweet_media(
-                    output_dir=settings.media_dir,
+                download_tweet_media_to_rustfs(
                     media_list=ExtractedMediaList(media=all_media),
                     max_connections=max_connections
                 )
