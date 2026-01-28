@@ -4,6 +4,9 @@ This module contains the shared configuration settings used across the applicati
 """
 
 from pathlib import Path
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -48,7 +51,14 @@ class Settings(BaseSettings):
     extracted_data_collection: str = "extracted-data"
     scraper_collection: str = "scraper"
     bookmarks_collection: str = "bookmarks"
-    
+
+    # RustFS / S3-compatible object storage settings
+    rustfs_endpoint_url: str = "http://localhost:9000"
+    rustfs_access_key: str = "rustfsadmin"
+    rustfs_secret_key: str = "rustfsadmin"
+    rustfs_bucket_name: str = "mindvault-media"
+    rustfs_region: str = "us-east-1"
+
     model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
     def __init__(self, **kwargs):
@@ -56,6 +66,7 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         self.setup_directories()
         self.validate_mongodb_connection()
+        self.validate_rustfs_connection()
 
     def setup_directories(self) -> None:
         """Create necessary directories if they don't exist."""
@@ -105,5 +116,27 @@ class Settings(BaseSettings):
             return True
         except ConnectionFailure:
             raise ConnectionError("Failed to connect to MongoDB. Please check your connection settings.")
-        
-settings = Settings() 
+
+    def validate_rustfs_connection(self) -> bool:
+        """Validates the connection to RustFS (S3-compatible storage).
+
+        Returns:
+            True if connection is successful, False otherwise.
+        """
+        try:
+            s3_client = boto3.client(
+                "s3",
+                endpoint_url=self.rustfs_endpoint_url,
+                aws_access_key_id=self.rustfs_access_key,
+                aws_secret_access_key=self.rustfs_secret_key,
+                region_name=self.rustfs_region,
+            )
+            s3_client.list_buckets()
+            return True
+        except (BotoCoreError, ClientError, Exception):
+            raise ConnectionError(
+                f"Failed to connect to RustFS at {self.rustfs_endpoint_url}. "
+                "Please check your connection settings and ensure RustFS is running."
+            )
+
+settings = Settings()
