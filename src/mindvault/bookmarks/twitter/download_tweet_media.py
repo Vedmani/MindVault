@@ -11,13 +11,12 @@ import functools
 
 import aiofiles
 import httpx
-from httpx import AsyncClient, Limits, Response
+from httpx import AsyncClient, Limits
 from tqdm.asyncio import tqdm_asyncio
 
 from mindvault.bookmarks.twitter.extract import (
-    ExtractedMediaList, 
+    ExtractedMediaList,
     ExtractedMedia,
-    ExtractedConversation,
     extract_media_info_from_conversation
 )
 from mindvault.core.config import settings

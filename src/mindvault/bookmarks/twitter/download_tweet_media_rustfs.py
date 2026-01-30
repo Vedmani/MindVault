@@ -216,7 +216,7 @@ async def _upload_stream_to_rustfs(
         logger.debug(f"Uploaded {s3_key} to {bucket_name} ({len(parts)} parts)")
         return True
 
-    except Exception as e:
+    except Exception:
         # Abort on any failure to avoid orphaned parts
         try:
             await s3_client.abort_multipart_upload(
