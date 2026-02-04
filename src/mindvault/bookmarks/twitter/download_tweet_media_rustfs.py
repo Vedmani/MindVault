@@ -2,22 +2,17 @@
 Module for downloading media from Twitter tweets and uploading to RustFS (S3-compatible storage).
 
 This is a parallel module to download_tweet_media.py. It downloads media from Twitter
-using httpx and uploads to RustFS via aioboto3 instead of writing to the local filesystem.
+and uploads to RustFS via aioboto3 instead of writing to the local filesystem.
 """
 
 import asyncio
-from typing import Dict, List, Optional, Tuple
-from urllib.parse import urlsplit
+from typing import AsyncIterator, Dict, List, Optional
 
 import aioboto3
-import httpx
-from botocore.exceptions import BotoCoreError, ClientError
-from httpx import AsyncClient
-from tqdm.asyncio import tqdm_asyncio
 
-from mindvault.bookmarks.twitter.download_tweet_media import (
-    _create_http_client,
-    _download_media_stream,
+from mindvault.bookmarks.twitter.media_download import (
+    build_media_key,
+    download_media,
 )
 from mindvault.bookmarks.twitter.extract import (
     ExtractedMedia,
@@ -28,26 +23,6 @@ from mindvault.core.logger_setup import logger
 
 # S3 multipart upload requires minimum 5MB per part (except last)
 MULTIPART_THRESHOLD = 5 * 1024 * 1024  # 5 MiB
-
-
-def get_s3_key(item: ExtractedMedia) -> str:
-    """
-    Compute the S3 object key for a media item.
-
-    Mirrors the filesystem path structure: {tweet_id}/{media_id}.{ext}
-
-    Args:
-        item: ExtractedMedia object with tweet_id, media_id, and media_url.
-
-    Returns:
-        S3 object key string, e.g. "1895195365269467454/abc123.jpg"
-    """
-    url = item.media_url
-    ext = urlsplit(url).path.split("/")[-1].split("?")[0]
-    filename = f"{item.media_id}"
-    if "." not in filename and "." in ext:
-        filename = f"{filename}.{ext.split('.')[-1]}"
-    return f"{item.tweet_id}/{filename}"
 
 
 def _create_s3_session() -> aioboto3.Session:
@@ -122,172 +97,154 @@ def _guess_content_type(key: str) -> Optional[str]:
 
 
 async def _upload_stream_to_rustfs(
-    http_client: AsyncClient,
     s3_client,
-    url: str,
+    stream: AsyncIterator[bytes],
     bucket_name: str,
     s3_key: str,
-    chunk_size: int = 32768,
     content_type: Optional[str] = None,
 ) -> bool:
     """
-    Stream download from URL directly to RustFS using multipart upload.
+    Stream upload to RustFS using multipart upload.
 
-    Memory usage: ~10MB peak (buffer + copy during upload), regardless of file size.
-
-    Args:
-        http_client: httpx AsyncClient for downloading.
-        s3_client: aioboto3 S3 client for uploading.
-        url: URL to download from.
-        bucket_name: Target S3 bucket.
-        s3_key: Object key.
-        chunk_size: Chunk size for HTTP streaming.
-        content_type: Optional MIME type.
-
-    Returns:
-        True on success, False on failure.
+    Memory usage remains bounded by the multipart threshold size.
     """
-    # Start multipart upload
     mpu = await s3_client.create_multipart_upload(
         Bucket=bucket_name,
         Key=s3_key,
-        ContentType=content_type or "application/octet-stream"
+        ContentType=content_type or "application/octet-stream",
     )
-    upload_id = mpu['UploadId']
+    upload_id = mpu["UploadId"]
 
     parts = []
     part_number = 1
     buffer = bytearray()
 
     try:
-        async for chunk in _download_media_stream(http_client, url, chunk_size):
+        async for chunk in stream:
+            if not chunk:
+                continue
             buffer.extend(chunk)
 
-            # When buffer reaches part size, upload it
             while len(buffer) >= MULTIPART_THRESHOLD:
                 part_data = bytes(buffer[:MULTIPART_THRESHOLD])
-                buffer = buffer[MULTIPART_THRESHOLD:]
+                del buffer[:MULTIPART_THRESHOLD]
 
                 resp = await s3_client.upload_part(
                     Bucket=bucket_name,
                     Key=s3_key,
                     PartNumber=part_number,
                     UploadId=upload_id,
-                    Body=part_data
+                    Body=part_data,
                 )
                 parts.append({
-                    'PartNumber': part_number,
-                    'ETag': resp['ETag']
+                    "PartNumber": part_number,
+                    "ETag": resp["ETag"],
                 })
                 part_number += 1
 
-        # Upload remaining data as final part (no minimum size for last part)
         if buffer:
             resp = await s3_client.upload_part(
                 Bucket=bucket_name,
                 Key=s3_key,
                 PartNumber=part_number,
                 UploadId=upload_id,
-                Body=bytes(buffer)
+                Body=bytes(buffer),
             )
             parts.append({
-                'PartNumber': part_number,
-                'ETag': resp['ETag']
+                "PartNumber": part_number,
+                "ETag": resp["ETag"],
             })
 
-        # Handle empty file case - abort multipart, log error, skip upload
         if not parts:
             await s3_client.abort_multipart_upload(
                 Bucket=bucket_name,
                 Key=s3_key,
-                UploadId=upload_id
+                UploadId=upload_id,
             )
             logger.error(f"Empty file received for {s3_key}, skipping upload")
             return False
 
-        # Complete the upload
         await s3_client.complete_multipart_upload(
             Bucket=bucket_name,
             Key=s3_key,
             UploadId=upload_id,
-            MultipartUpload={'Parts': parts}
+            MultipartUpload={"Parts": parts},
         )
 
         logger.debug(f"Uploaded {s3_key} to {bucket_name} ({len(parts)} parts)")
         return True
 
     except Exception:
-        # Abort on any failure to avoid orphaned parts
         try:
             await s3_client.abort_multipart_upload(
                 Bucket=bucket_name,
                 Key=s3_key,
-                UploadId=upload_id
+                UploadId=upload_id,
             )
         except Exception:
-            pass  # Best effort cleanup
-        raise  # Re-raise for caller to handle retry
+            pass
+        raise
 
 
-async def _upload_single_file(
-    http_client: AsyncClient,
-    s3_client,
-    item: ExtractedMedia,
-    bucket_name: str,
-    chunk_size: int = 32768,
-    max_retries: int = 3,
-    retry_delay: float = 1.0,
-    skip_existing: bool = True,
-) -> Tuple[str, Optional[str]]:
-    """
-    Download a media file from Twitter and upload it to RustFS.
+class RustFSMediaStore:
+    """RustFS-backed media storage using S3-compatible API."""
 
-    Args:
-        http_client: httpx AsyncClient for downloading from Twitter.
-        s3_client: aioboto3 S3 client for uploading to RustFS.
-        item: ExtractedMedia describing the media to download.
-        bucket_name: Target S3 bucket.
-        chunk_size: Chunk size for HTTP streaming.
-        max_retries: Maximum retry attempts on failure.
-        retry_delay: Base delay between retries (multiplied by attempt number).
-        skip_existing: If True, skip upload when the object already exists in the bucket.
+    def __init__(self, bucket_name: Optional[str] = None) -> None:
+        self.bucket_name = bucket_name or settings.rustfs_bucket_name
+        self._session = _create_s3_session()
+        self._client_cm = None
+        self.s3_client = None
 
-    Returns:
-        Tuple of (tweet_id, s3_key) on success, or (tweet_id, None) on failure.
-    """
-    s3_key = get_s3_key(item)
+    async def __aenter__(self) -> "RustFSMediaStore":
+        self._client_cm = self._session.client(
+            "s3",
+            endpoint_url=settings.rustfs_endpoint_url,
+        )
+        self.s3_client = await self._client_cm.__aenter__()
+        return self
 
-    if skip_existing and await _check_object_exists(s3_client, bucket_name, s3_key):
-        logger.debug(f"Object already exists, skipping: {bucket_name}/{s3_key}")
-        return (item.tweet_id, s3_key)
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._client_cm is not None:
+            await self._client_cm.__aexit__(exc_type, exc, tb)
 
-    content_type = _guess_content_type(s3_key)
+    async def prepare(self) -> None:
+        if self.s3_client is None:
+            raise RuntimeError("RustFSMediaStore must be used as an async context manager")
+        settings.validate_rustfs_connection()
+        await _ensure_bucket_exists(self.s3_client, self.bucket_name)
 
-    retry_count = 0
-    while retry_count <= max_retries:
-        try:
-            success = await _upload_stream_to_rustfs(
-                http_client=http_client,
-                s3_client=s3_client,
-                url=item.media_url,
-                bucket_name=bucket_name,
-                s3_key=s3_key,
-                chunk_size=chunk_size,
-                content_type=content_type,
-            )
-            if success:
-                return (item.tweet_id, s3_key)
-            return (item.tweet_id, None)
+    def get_location(self, item: ExtractedMedia) -> str:
+        return build_media_key(item)
 
-        except (httpx.HTTPError, IOError, BotoCoreError, ClientError) as e:
-            retry_count += 1
-            if retry_count > max_retries:
-                logger.error(f"Failed to upload {s3_key} after {max_retries} retries: {e}")
-                return (item.tweet_id, None)
-            logger.warning(f"Error uploading {s3_key} (attempt {retry_count}/{max_retries}): {e}")
-            await asyncio.sleep(retry_delay * retry_count)
+    async def exists(self, item: ExtractedMedia) -> bool:
+        if self.s3_client is None:
+            raise RuntimeError("RustFSMediaStore must be used as an async context manager")
+        key = build_media_key(item)
+        return await _check_object_exists(self.s3_client, self.bucket_name, key)
 
-    return (item.tweet_id, None)
+    async def save(
+        self,
+        item: ExtractedMedia,
+        stream: AsyncIterator[bytes],
+        *,
+        content_type: Optional[str] = None,
+    ) -> str:
+        if self.s3_client is None:
+            raise RuntimeError("RustFSMediaStore must be used as an async context manager")
+        s3_key = build_media_key(item)
+        inferred_type = content_type or _guess_content_type(s3_key)
+
+        success = await _upload_stream_to_rustfs(
+            s3_client=self.s3_client,
+            stream=stream,
+            bucket_name=self.bucket_name,
+            s3_key=s3_key,
+            content_type=inferred_type,
+        )
+        if not success:
+            raise IOError(f"Upload failed for {s3_key}")
+
+        return s3_key
 
 
 async def download_tweet_media_to_rustfs(
@@ -317,53 +274,15 @@ async def download_tweet_media_to_rustfs(
     Returns:
         Dictionary mapping tweet IDs to lists of S3 keys for successfully uploaded media.
     """
-    if not media_list.media:
-        logger.warning("No media items to download")
-        return {}
+    async with RustFSMediaStore(bucket_name=bucket_name) as store:
+        results = await download_media(
+            media_list=media_list,
+            store=store,
+            progress_desc=f"Uploading {len(media_list.media)} media files to RustFS",
+            **kwargs,
+        )
 
-    bucket = bucket_name or settings.rustfs_bucket_name
-
-    session = _create_s3_session()
-
-    async with session.client(
-        "s3",
-        endpoint_url=settings.rustfs_endpoint_url,
-    ) as s3_client:
-        await _ensure_bucket_exists(s3_client, bucket)
-
-        async with await _create_http_client(
-            max_connections=kwargs.get("max_connections", 50),
-            max_keepalive_connections=kwargs.get("max_keepalive_connections"),
-            keepalive_expiry=kwargs.get("keepalive_expiry", 5.0),
-            timeout=kwargs.get("timeout", 60),
-        ) as http_client:
-            tasks = [
-                _upload_single_file(
-                    http_client=http_client,
-                    s3_client=s3_client,
-                    item=item,
-                    bucket_name=bucket,
-                    chunk_size=kwargs.get("chunk_size", 32768),
-                    max_retries=kwargs.get("max_retries", 3),
-                    retry_delay=kwargs.get("retry_delay", 1.0),
-                    skip_existing=kwargs.get("skip_existing", True),
-                )
-                for item in media_list.media
-            ]
-
-            results = await tqdm_asyncio.gather(
-                *tasks,
-                desc=f"Uploading {len(media_list.media)} media files to RustFS",
-            )
-
-    upload_results: Dict[str, List[str]] = {}
-    for tweet_id, s3_key in results:
-        if s3_key:
-            if tweet_id not in upload_results:
-                upload_results[tweet_id] = []
-            upload_results[tweet_id].append(s3_key)
-
-    return upload_results
+    return results
 
 
 if __name__ == "__main__":

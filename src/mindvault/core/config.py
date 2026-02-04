@@ -66,7 +66,6 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         self.setup_directories()
         self.validate_mongodb_connection()
-        self.validate_rustfs_connection()
 
     def setup_directories(self) -> None:
         """Create necessary directories if they don't exist."""
