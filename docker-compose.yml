@@ -12,8 +12,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: password
       MONGO_INITDB_DATABASE: mindvault
     volumes:
-      # Store data in ~/.mindvault/mongodb (cross-platform using $HOME)
-      - ${HOME}/.mindvault/mongodb:/data/db
+      # Store data in BASE_DIR/mongodb; fallback to ~/.mindvault/mongodb
+      - ${BASE_DIR:-${HOME}/.mindvault}/mongodb:/data/db
     # Allow connections from any IP (required for LAN access)
     command: ["mongod", "--bind_ip_all"]
 
@@ -31,6 +31,6 @@ services:
       RUSTFS_SECRET_KEY: rustfsadmin
       RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
-      # Store data in ~/.mindvault/rustfs (cross-platform using $HOME)
-      - ${HOME}/.mindvault/rustfs:/data
+      # Store data in BASE_DIR/rustfs; fallback to ~/.mindvault/rustfs
+      - ${BASE_DIR:-${HOME}/.mindvault}/rustfs:/data
     command: ["/data"]
