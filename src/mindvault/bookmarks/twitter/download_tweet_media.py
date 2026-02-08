@@ -3,6 +3,7 @@ Module for downloading media from Twitter tweets based on media information extr
 """
 
 import asyncio
+import warnings
 from pathlib import Path
 from typing import AsyncIterator, Dict, List, Optional, Union
 
@@ -72,6 +73,11 @@ async def download_tweet_media(
     """
     Download media from Twitter tweets.
 
+    Deprecated:
+        This filesystem-backed download path is deprecated and will be removed in a
+        future release. Use `download_tweet_media_to_blob_storage` for supported
+        object-storage backends.
+
     Args:
         media_list: DownloadedMediaList from extract_media_info_from_conversation
         output_dir: Directory to save downloaded media (defaults to settings.media_dir)
@@ -88,6 +94,17 @@ async def download_tweet_media(
     Returns:
         Dictionary mapping tweet IDs to lists of downloaded file paths
     """
+    warnings.warn(
+        (
+            "`download_tweet_media` (filesystem backend) is deprecated and will be removed "
+            "in a future release. Use "
+            "`download_tweet_media_to_blob_storage` from "
+            "`mindvault.bookmarks.twitter.download_tweet_media_object_storage`."
+        ),
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     out_path = Path(settings.media_dir) if output_dir is None else Path(output_dir)
     store = FileSystemMediaStore(out_path)
 
