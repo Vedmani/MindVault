@@ -4,6 +4,7 @@ Generic S3-compatible media storage backend for tweet media downloads.
 
 from __future__ import annotations
 
+import asyncio
 from typing import AsyncIterator, Dict, List, Optional
 
 import aioboto3
@@ -154,6 +155,16 @@ async def _upload_stream_to_s3_compatible(
             MultipartUpload={"Parts": parts},
         )
         return True
+    except asyncio.CancelledError:
+        try:
+            await s3_client.abort_multipart_upload(
+                Bucket=bucket_name,
+                Key=key,
+                UploadId=upload_id,
+            )
+        except Exception:
+            pass
+        raise
     except Exception:
         try:
             await s3_client.abort_multipart_upload(

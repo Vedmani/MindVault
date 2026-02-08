@@ -212,7 +212,7 @@ class Settings(BaseSettings):
             )
             s3_client.list_buckets()
             return True
-        except (BotoCoreError, ClientError, Exception) as exc:
+        except (BotoCoreError, ClientError) as exc:
             raise ConnectionError(
                 "Failed to connect to blob storage provider "
                 f"'{connection.provider}' at {connection.endpoint_url}. "
