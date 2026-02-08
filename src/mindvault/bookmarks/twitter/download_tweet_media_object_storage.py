@@ -167,7 +167,7 @@ async def _upload_stream_to_s3_compatible(
 
 
 class S3CompatibleMediaStore:
-    """S3-compatible media storage backend (MinIO/RustFS/SeaweedFS)."""
+    """S3-compatible media storage backend (MinIO-only in this release)."""
 
     def __init__(
         self,

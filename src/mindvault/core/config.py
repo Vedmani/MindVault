@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Literal, Optional
+from typing import Dict, Literal, Optional
 
 import boto3
 from botocore.config import Config
@@ -11,35 +11,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 
-BlobStorageProvider = Literal["minio", "rustfs", "seaweedfs"]
+BlobStorageProvider = Literal["minio"]
 BlobStorageAddressingStyle = Literal["auto", "virtual", "path"]
 
 _VALID_ADDRESSING_STYLES = {"auto", "virtual", "path"}
-_BLOB_STORAGE_PROVIDER_DEFAULTS: Dict[str, Dict[str, Any]] = {
+_BLOB_STORAGE_PROVIDER_DEFAULTS: Dict[str, Dict[str, object]] = {
     "minio": {
         "endpoint_url": "http://localhost:9000",
         "access_key": "minioadmin",
         "secret_key": "minioadmin",
-        "bucket_name": "mindvault-media",
-        "region": "us-east-1",
-        "addressing_style": "path",
-        "verify_ssl": False,
-        "auto_create_bucket": True,
-    },
-    "rustfs": {
-        "endpoint_url": "http://localhost:9100",
-        "access_key": "rustfsadmin",
-        "secret_key": "rustfsadmin",
-        "bucket_name": "mindvault-media",
-        "region": "us-east-1",
-        "addressing_style": "path",
-        "verify_ssl": False,
-        "auto_create_bucket": True,
-    },
-    "seaweedfs": {
-        "endpoint_url": "http://localhost:8333",
-        "access_key": "seaweedfsadmin",
-        "secret_key": "seaweedfsadmin",
         "bucket_name": "mindvault-media",
         "region": "us-east-1",
         "addressing_style": "path",
@@ -98,13 +78,6 @@ class Settings(BaseSettings):
     blob_storage_verify_ssl: Optional[bool] = None
     blob_storage_auto_create_bucket: Optional[bool] = None
 
-    # Deprecated RustFS aliases kept for backward compatibility.
-    rustfs_endpoint_url: str = "http://localhost:9100"
-    rustfs_access_key: str = "rustfsadmin"
-    rustfs_secret_key: str = "rustfsadmin"
-    rustfs_bucket_name: str = "mindvault-media"
-    rustfs_region: str = "us-east-1"
-
     # If needed for local scripts/tests, this can be disabled via env:
     # VALIDATE_EXTERNAL_SERVICES_ON_STARTUP=false
     validate_external_services_on_startup: bool = True
@@ -157,20 +130,6 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid blob storage provider '{provider_name}'. Valid providers: {valid}")
         return provider_name  # type: ignore[return-value]
 
-    @staticmethod
-    def _resolve_with_precedence(
-        generic_value: Optional[str],
-        legacy_value: Optional[str],
-        default_value: str,
-        *,
-        allow_legacy: bool,
-    ) -> str:
-        if generic_value is not None and generic_value != "":
-            return generic_value
-        if allow_legacy and legacy_value is not None and legacy_value != "":
-            return legacy_value
-        return default_value
-
     def get_blob_storage_connection(
         self,
         *,
@@ -180,38 +139,11 @@ class Settings(BaseSettings):
         """Resolve effective blob storage config with deterministic precedence."""
         resolved_provider = self._resolve_blob_provider(provider)
         defaults = _BLOB_STORAGE_PROVIDER_DEFAULTS[resolved_provider]
-        use_rustfs_legacy = resolved_provider == "rustfs"
-
-        endpoint_url = self._resolve_with_precedence(
-            self.blob_storage_endpoint_url,
-            self.rustfs_endpoint_url if use_rustfs_legacy else None,
-            defaults["endpoint_url"],
-            allow_legacy=use_rustfs_legacy,
-        )
-        access_key = self._resolve_with_precedence(
-            self.blob_storage_access_key,
-            self.rustfs_access_key if use_rustfs_legacy else None,
-            defaults["access_key"],
-            allow_legacy=use_rustfs_legacy,
-        )
-        secret_key = self._resolve_with_precedence(
-            self.blob_storage_secret_key,
-            self.rustfs_secret_key if use_rustfs_legacy else None,
-            defaults["secret_key"],
-            allow_legacy=use_rustfs_legacy,
-        )
-        resolved_bucket_name = self._resolve_with_precedence(
-            self.blob_storage_bucket_name,
-            self.rustfs_bucket_name if use_rustfs_legacy else None,
-            defaults["bucket_name"],
-            allow_legacy=use_rustfs_legacy,
-        )
-        region = self._resolve_with_precedence(
-            self.blob_storage_region,
-            self.rustfs_region if use_rustfs_legacy else None,
-            defaults["region"],
-            allow_legacy=use_rustfs_legacy,
-        )
+        endpoint_url = self.blob_storage_endpoint_url or str(defaults["endpoint_url"])
+        access_key = self.blob_storage_access_key or str(defaults["access_key"])
+        secret_key = self.blob_storage_secret_key or str(defaults["secret_key"])
+        resolved_bucket_name = self.blob_storage_bucket_name or str(defaults["bucket_name"])
+        region = self.blob_storage_region or str(defaults["region"])
 
         if bucket_name is not None and bucket_name != "":
             resolved_bucket_name = bucket_name
@@ -219,7 +151,7 @@ class Settings(BaseSettings):
         addressing_style = (
             self.blob_storage_addressing_style
             if self.blob_storage_addressing_style is not None
-            else defaults["addressing_style"]
+            else str(defaults["addressing_style"])
         )
         if addressing_style not in _VALID_ADDRESSING_STYLES:
             raise ValueError(
@@ -230,12 +162,12 @@ class Settings(BaseSettings):
         verify_ssl = (
             self.blob_storage_verify_ssl
             if self.blob_storage_verify_ssl is not None
-            else defaults["verify_ssl"]
+            else bool(defaults["verify_ssl"])
         )
         auto_create_bucket = (
             self.blob_storage_auto_create_bucket
             if self.blob_storage_auto_create_bucket is not None
-            else defaults["auto_create_bucket"]
+            else bool(defaults["auto_create_bucket"])
         )
 
         return BlobStorageConnection(
@@ -286,10 +218,5 @@ class Settings(BaseSettings):
                 f"'{connection.provider}' at {connection.endpoint_url}. "
                 "Please check your object storage configuration and service availability."
             ) from exc
-
-    def validate_rustfs_connection(self) -> bool:
-        """Deprecated compatibility alias for RustFS validation."""
-        return self.validate_blob_storage_connection(provider="rustfs")
-
 
 settings = Settings()

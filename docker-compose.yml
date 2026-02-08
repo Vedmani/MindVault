@@ -17,20 +17,19 @@ services:
     # Allow connections from any IP (required for LAN access)
     command: ["mongod", "--bind_ip_all"]
 
-  rustfs:
-    image: rustfs/rustfs:latest
-    container_name: mindvault-rustfs
+  minio:
+    image: minio/minio:latest
+    container_name: mindvault-minio
     restart: unless-stopped
     ports:
       # Bind to 0.0.0.0 to allow LAN access (all network interfaces)
-      # Use 127.0.0.1:9000:9000 and 127.0.0.1:9001:9001 if you want localhost-only access
+      # Use 127.0.0.1:9000:9000 and 127.0.0.1:9001:9001 for localhost-only access
       - "0.0.0.0:9000:9000"   # S3 API
       - "0.0.0.0:9001:9001"   # Web Console
     environment:
-      RUSTFS_ACCESS_KEY: rustfsadmin
-      RUSTFS_SECRET_KEY: rustfsadmin
-      RUSTFS_CONSOLE_ENABLE: "true"
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      # Store data in BASE_DIR/rustfs; fallback to ~/.mindvault/rustfs
-      - ${BASE_DIR:-${HOME}/.mindvault}/rustfs:/data
-    command: ["/data"]
+      # Store data in BASE_DIR/minio; fallback to ~/.mindvault/minio
+      - ${BASE_DIR:-${HOME}/.mindvault}/minio:/data
+    command: ["server", "/data", "--console-address", ":9001"]
