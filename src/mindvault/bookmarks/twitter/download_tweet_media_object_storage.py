@@ -9,6 +9,7 @@ from typing import AsyncIterator, Dict, List, Optional
 
 import aioboto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 
 from mindvault.bookmarks.twitter.extract import (
     ExtractedMedia,
@@ -23,6 +24,7 @@ from mindvault.core.logger_setup import logger
 
 # S3 multipart upload requires minimum 5MB per part (except last).
 MULTIPART_THRESHOLD = 5 * 1024 * 1024  # 5 MiB
+_MISSING_BUCKET_ERROR_CODES = {"404", "NoSuchBucket", "NotFound"}
 
 
 def build_s3_uri(bucket_name: str, key: str) -> str:
@@ -53,12 +55,22 @@ async def _ensure_bucket_exists(
     try:
         await s3_client.head_bucket(Bucket=bucket_name)
         return
-    except Exception:
+    except ClientError as exc:
+        error_code = str(exc.response.get("Error", {}).get("Code", "")).strip()
+        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        is_missing_bucket = (
+            error_code in _MISSING_BUCKET_ERROR_CODES
+            or status_code == 404
+        )
+
+        if not is_missing_bucket:
+            raise
+
         if not connection.auto_create_bucket:
             raise ConnectionError(
                 f"Bucket '{bucket_name}' does not exist in provider '{connection.provider}' "
                 "and BLOB_STORAGE_AUTO_CREATE_BUCKET is disabled."
-            )
+            ) from exc
 
     logger.info(f"Creating bucket '{bucket_name}' in provider '{connection.provider}'")
     await s3_client.create_bucket(Bucket=bucket_name)

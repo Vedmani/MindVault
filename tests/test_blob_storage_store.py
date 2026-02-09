@@ -2,6 +2,8 @@ import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from botocore.exceptions import ClientError
+
 os.environ.setdefault("TWITTER_CT0", "test-ct0")
 os.environ.setdefault("TWITTER_AUTH_TOKEN", "test-auth")
 os.environ.setdefault("VALIDATE_EXTERNAL_SERVICES_ON_STARTUP", "false")
@@ -22,6 +24,16 @@ async def _stream_chunks(chunks):
         yield chunk
 
 
+def _make_head_bucket_error(code: str, status_code: int) -> ClientError:
+    return ClientError(
+        error_response={
+            "Error": {"Code": code, "Message": "error"},
+            "ResponseMetadata": {"HTTPStatusCode": status_code},
+        },
+        operation_name="HeadBucket",
+    )
+
+
 class BlobStorageStoreTests(unittest.IsolatedAsyncioTestCase):
     async def test_ensure_bucket_exists_creates_bucket_when_missing(self) -> None:
         connection = BlobStorageConnection(
@@ -36,7 +48,7 @@ class BlobStorageStoreTests(unittest.IsolatedAsyncioTestCase):
             auto_create_bucket=True,
         )
         s3_client = AsyncMock()
-        s3_client.head_bucket.side_effect = Exception("missing")
+        s3_client.head_bucket.side_effect = _make_head_bucket_error("404", 404)
 
         await _ensure_bucket_exists(s3_client, connection)
 
@@ -55,10 +67,30 @@ class BlobStorageStoreTests(unittest.IsolatedAsyncioTestCase):
             auto_create_bucket=False,
         )
         s3_client = AsyncMock()
-        s3_client.head_bucket.side_effect = Exception("missing")
+        s3_client.head_bucket.side_effect = _make_head_bucket_error("NoSuchBucket", 404)
 
         with self.assertRaises(ConnectionError):
             await _ensure_bucket_exists(s3_client, connection)
+
+    async def test_ensure_bucket_exists_does_not_create_bucket_for_non_missing_errors(self) -> None:
+        connection = BlobStorageConnection(
+            provider="minio",
+            endpoint_url="http://localhost:9000",
+            access_key="x",
+            secret_key="y",
+            bucket_name="mindvault-media",
+            region="us-east-1",
+            addressing_style="path",
+            verify_ssl=False,
+            auto_create_bucket=True,
+        )
+        s3_client = AsyncMock()
+        s3_client.head_bucket.side_effect = _make_head_bucket_error("AccessDenied", 403)
+
+        with self.assertRaises(ClientError):
+            await _ensure_bucket_exists(s3_client, connection)
+
+        s3_client.create_bucket.assert_not_awaited()
 
     async def test_check_object_exists_respects_content_length(self) -> None:
         s3_client = AsyncMock()
