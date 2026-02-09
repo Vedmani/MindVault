@@ -12,8 +12,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: password
       MONGO_INITDB_DATABASE: mindvault
     volumes:
-      # Store data in BASE_DIR/mongodb; fallback to ~/.mindvault/mongodb
-      - ${BASE_DIR:-${HOME}/.mindvault}/mongodb:/data/db
+      # Store data in ~/.mindvault/mongodb (cross-platform using $HOME)
+      - ${HOME}/.mindvault/mongodb:/data/db
     # Allow connections from any IP (required for LAN access)
     command: ["mongod", "--bind_ip_all"]
 
