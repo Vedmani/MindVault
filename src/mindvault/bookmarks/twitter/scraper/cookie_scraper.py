@@ -13,9 +13,8 @@ This module should not be used for new development. Consider using PlaywrightScr
 This module handles scraping tweets using the Twitter API.
 """
 
-import json
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from tenacity import (
     before_sleep_log,
     retry,
@@ -29,7 +28,6 @@ from twitter.scraper import Scraper as TwitterScraper
 
 from mindvault.core.config import settings
 from mindvault.core.logger_setup import get_logger, logger as base_logger
-from mindvault.core.mongodb_utils import save_raw_tweet
 from mindvault.bookmarks.twitter.scraper.base import BaseTweetScraper, TweetNotFoundError
 
 logger = get_logger(__name__)

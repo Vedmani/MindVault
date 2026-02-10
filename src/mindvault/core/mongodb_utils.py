@@ -3,7 +3,7 @@
 This module provides functions for MongoDB connections and data operations.
 """
 
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 from pymongo import MongoClient
 from pymongo.database import Database
 from mindvault.core.config import settings

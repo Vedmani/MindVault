@@ -16,3 +16,20 @@ services:
       - ${HOME}/.mindvault/mongodb:/data/db
     # Allow connections from any IP (required for LAN access)
     command: ["mongod", "--bind_ip_all"]
+
+  minio:
+    image: minio/minio:latest
+    container_name: mindvault-minio
+    restart: unless-stopped
+    ports:
+      # Bind to 0.0.0.0 to allow LAN access (all network interfaces)
+      # Use 127.0.0.1:9000:9000 and 127.0.0.1:9001:9001 for localhost-only access
+      - "0.0.0.0:9000:9000"   # S3 API
+      - "0.0.0.0:9001:9001"   # Web Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      # Store data in BASE_DIR/minio; fallback to ~/.mindvault/minio
+      - ${BASE_DIR:-${HOME}/.mindvault}/minio:/data
+    command: ["server", "/data", "--console-address", ":9001"]

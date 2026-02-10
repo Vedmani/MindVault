@@ -3,7 +3,6 @@
 This module handles database setup and tweet storage operations.
 """
 
-from pathlib import Path
 from typing import Set, Optional
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, text, Column, String, DateTime

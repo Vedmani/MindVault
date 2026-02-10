@@ -3,11 +3,9 @@
 This module handles scraping tweets using Playwright to intercept Twitter's GraphQL API calls.
 """
 
-import json
 import time
-import urllib.parse
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 from tenacity import (
     before_sleep_log,
     retry,
@@ -17,7 +15,7 @@ from tenacity import (
     wait_fixed,
 )
 from tqdm import tqdm
-from playwright.sync_api import sync_playwright, Playwright, Error, Response
+from playwright.sync_api import sync_playwright, Error, Response
 
 from mindvault.core.config import settings
 from mindvault.core.logger_setup import get_logger, logger as base_logger
