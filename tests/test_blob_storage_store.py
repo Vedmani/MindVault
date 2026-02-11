@@ -6,7 +6,6 @@ from botocore.exceptions import ClientError
 
 os.environ.setdefault("TWITTER_CT0", "test-ct0")
 os.environ.setdefault("TWITTER_AUTH_TOKEN", "test-auth")
-os.environ.setdefault("VALIDATE_EXTERNAL_SERVICES_ON_STARTUP", "false")
 
 from mindvault.bookmarks.twitter.download_tweet_media_object_storage import (
     _check_object_exists,
@@ -31,6 +30,16 @@ def _make_head_bucket_error(code: str, status_code: int) -> ClientError:
             "ResponseMetadata": {"HTTPStatusCode": status_code},
         },
         operation_name="HeadBucket",
+    )
+
+
+def _make_head_object_error(code: str, status_code: int) -> ClientError:
+    return ClientError(
+        error_response={
+            "Error": {"Code": code, "Message": "error"},
+            "ResponseMetadata": {"HTTPStatusCode": status_code},
+        },
+        operation_name="HeadObject",
     )
 
 
@@ -100,6 +109,19 @@ class BlobStorageStoreTests(unittest.IsolatedAsyncioTestCase):
 
         s3_client.head_object.return_value = {"ContentLength": 0}
         self.assertFalse(await _check_object_exists(s3_client, "bucket", "key"))
+
+    async def test_check_object_exists_returns_false_for_not_found(self) -> None:
+        s3_client = AsyncMock()
+        s3_client.head_object.side_effect = _make_head_object_error("NoSuchKey", 404)
+
+        self.assertFalse(await _check_object_exists(s3_client, "bucket", "key"))
+
+    async def test_check_object_exists_raises_for_access_denied(self) -> None:
+        s3_client = AsyncMock()
+        s3_client.head_object.side_effect = _make_head_object_error("AccessDenied", 403)
+
+        with self.assertRaises(ClientError):
+            await _check_object_exists(s3_client, "bucket", "key")
 
     async def test_upload_stream_aborts_empty_file(self) -> None:
         s3_client = AsyncMock()

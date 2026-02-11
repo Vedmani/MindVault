@@ -1,9 +1,9 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("TWITTER_CT0", "test-ct0")
 os.environ.setdefault("TWITTER_AUTH_TOKEN", "test-auth")
-os.environ.setdefault("VALIDATE_EXTERNAL_SERVICES_ON_STARTUP", "false")
 
 from mindvault.core.config import Settings
 
@@ -12,7 +12,6 @@ class BlobStorageConfigTests(unittest.TestCase):
     def _settings(self, **overrides) -> Settings:
         return Settings(
             _env_file=None,
-            validate_on_startup=False,
             twitter_ct0="test-ct0",
             twitter_auth_token="test-auth",
             **overrides,
@@ -58,6 +57,46 @@ class BlobStorageConfigTests(unittest.TestCase):
         settings = self._settings(blob_storage_provider="minio")
         with self.assertRaises(ValueError):
             settings.get_blob_storage_connection(provider="unsupported-provider")
+
+    def test_settings_does_not_validate_by_default(self) -> None:
+        with patch.object(Settings, "validate_mongodb_connection") as mongodb_validate, patch.object(
+            Settings, "validate_blob_storage_connection"
+        ) as blob_validate:
+            Settings(
+                _env_file=None,
+                twitter_ct0="test-ct0",
+                twitter_auth_token="test-auth",
+            )
+
+        mongodb_validate.assert_not_called()
+        blob_validate.assert_not_called()
+
+    def test_validate_external_services_runs_both_checks(self) -> None:
+        settings = self._settings()
+        with patch.object(Settings, "validate_mongodb_connection") as mongodb_validate, patch.object(
+            Settings, "validate_blob_storage_connection"
+        ) as blob_validate:
+            settings.validate_external_services()
+
+        mongodb_validate.assert_called_once_with()
+        blob_validate.assert_called_once_with()
+
+    def test_validate_blob_storage_connection_uses_head_bucket(self) -> None:
+        settings = self._settings(
+            blob_storage_bucket_name="mindvault-media",
+            blob_storage_endpoint_url="http://localhost:9000",
+            blob_storage_access_key="test-access",
+            blob_storage_secret_key="test-secret",
+            blob_storage_region="us-east-1",
+        )
+
+        with patch("mindvault.core.config.boto3.client") as mock_client_factory:
+            mock_client = mock_client_factory.return_value
+            result = settings.validate_blob_storage_connection()
+
+        self.assertTrue(result)
+        mock_client.head_bucket.assert_called_once_with(Bucket="mindvault-media")
+        mock_client.list_buckets.assert_not_called()
 
 
 if __name__ == "__main__":

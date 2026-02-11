@@ -47,6 +47,7 @@ class WorkflowManager:
         self.use_existing_pending = use_existing_pending
         self.processed_tweets = []  # Track tweets processed in current run
         settings.setup_directories()
+        settings.validate_external_services()
         create_database()
 
     def export_bookmarks(self) -> Path:

@@ -78,24 +78,23 @@ class Settings(BaseSettings):
     blob_storage_verify_ssl: Optional[bool] = None
     blob_storage_auto_create_bucket: Optional[bool] = None
 
-    # If needed for local scripts/tests, this can be disabled via env:
-    # VALIDATE_EXTERNAL_SERVICES_ON_STARTUP=false
-    validate_external_services_on_startup: bool = True
-
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    def __init__(self, validate_on_startup: Optional[bool] = None, **kwargs):
+    def __init__(self, **kwargs):
         """Initialize settings and validate external dependencies."""
         super().__init__(**kwargs)
         self.setup_directories()
 
-        should_validate = (
-            self.validate_external_services_on_startup
-            if validate_on_startup is None
-            else validate_on_startup
-        )
-        if should_validate:
+    def validate_external_services(
+        self,
+        *,
+        validate_mongodb: bool = True,
+        validate_blob_storage: bool = True,
+    ) -> None:
+        """Validate configured external dependencies for runtime entrypoints."""
+        if validate_mongodb:
             self.validate_mongodb_connection()
+        if validate_blob_storage:
             self.validate_blob_storage_connection()
 
     def setup_directories(self) -> None:
@@ -210,12 +209,13 @@ class Settings(BaseSettings):
                 verify=connection.verify_ssl,
                 config=client_config,
             )
-            s3_client.list_buckets()
+            s3_client.head_bucket(Bucket=connection.bucket_name)
             return True
         except (BotoCoreError, ClientError) as exc:
             raise ConnectionError(
                 "Failed to connect to blob storage provider "
-                f"'{connection.provider}' at {connection.endpoint_url}. "
+                f"'{connection.provider}' at {connection.endpoint_url} "
+                f"for bucket '{connection.bucket_name}'. "
                 "Please check your object storage configuration and service availability."
             ) from exc
 
