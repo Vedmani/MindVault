@@ -2,10 +2,22 @@ import os
 import unittest
 from unittest.mock import patch
 
+from botocore.exceptions import ClientError
+
 os.environ.setdefault("TWITTER_CT0", "test-ct0")
 os.environ.setdefault("TWITTER_AUTH_TOKEN", "test-auth")
 
 from mindvault.core.config import Settings
+
+
+def _make_head_bucket_error(code: str, status_code: int) -> ClientError:
+    return ClientError(
+        error_response={
+            "Error": {"Code": code, "Message": "error"},
+            "ResponseMetadata": {"HTTPStatusCode": status_code},
+        },
+        operation_name="HeadBucket",
+    )
 
 
 class BlobStorageConfigTests(unittest.TestCase):
@@ -92,11 +104,29 @@ class BlobStorageConfigTests(unittest.TestCase):
 
         with patch("mindvault.core.config.boto3.client") as mock_client_factory:
             mock_client = mock_client_factory.return_value
-            result = settings.validate_blob_storage_connection()
+            settings.validate_blob_storage_connection()
 
-        self.assertTrue(result)
         mock_client.head_bucket.assert_called_once_with(Bucket="mindvault-media")
         mock_client.list_buckets.assert_not_called()
+
+    def test_validate_blob_storage_allows_missing_bucket_when_auto_create_enabled(self) -> None:
+        settings = self._settings(blob_storage_auto_create_bucket=True)
+
+        with patch("mindvault.core.config.boto3.client") as mock_client_factory:
+            mock_client = mock_client_factory.return_value
+            mock_client.head_bucket.side_effect = _make_head_bucket_error("NoSuchBucket", 404)
+
+            settings.validate_blob_storage_connection()
+
+    def test_validate_blob_storage_raises_for_missing_bucket_when_auto_create_disabled(self) -> None:
+        settings = self._settings(blob_storage_auto_create_bucket=False)
+
+        with patch("mindvault.core.config.boto3.client") as mock_client_factory:
+            mock_client = mock_client_factory.return_value
+            mock_client.head_bucket.side_effect = _make_head_bucket_error("NoSuchBucket", 404)
+
+            with self.assertRaises(ConnectionError):
+                settings.validate_blob_storage_connection()
 
 
 if __name__ == "__main__":
