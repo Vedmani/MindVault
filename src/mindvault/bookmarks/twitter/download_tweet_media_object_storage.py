@@ -25,6 +25,7 @@ from mindvault.core.logger_setup import logger
 # S3 multipart upload requires minimum 5MB per part (except last).
 MULTIPART_THRESHOLD = 5 * 1024 * 1024  # 5 MiB
 _MISSING_BUCKET_ERROR_CODES = {"404", "NoSuchBucket", "NotFound"}
+_MISSING_OBJECT_ERROR_CODES = {"404", "NoSuchKey", "NotFound"}
 
 
 def build_s3_uri(bucket_name: str, key: str) -> str:
@@ -80,8 +81,12 @@ async def _check_object_exists(s3_client, bucket_name: str, key: str) -> bool:
     try:
         response = await s3_client.head_object(Bucket=bucket_name, Key=key)
         return response.get("ContentLength", 0) > 0
-    except Exception:
-        return False
+    except ClientError as exc:
+        error_code = str(exc.response.get("Error", {}).get("Code", "")).strip()
+        status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+        if error_code in _MISSING_OBJECT_ERROR_CODES or status_code == 404:
+            return False
+        raise
 
 
 def _guess_content_type(key: str) -> Optional[str]:

@@ -15,6 +15,7 @@ BlobStorageProvider = Literal["minio"]
 BlobStorageAddressingStyle = Literal["auto", "virtual", "path"]
 
 _VALID_ADDRESSING_STYLES = {"auto", "virtual", "path"}
+_MISSING_BUCKET_ERROR_CODES = {"404", "NoSuchBucket", "NotFound"}
 _BLOB_STORAGE_PROVIDER_DEFAULTS: Dict[str, Dict[str, object]] = {
     "minio": {
         "endpoint_url": "http://localhost:9000",
@@ -78,24 +79,23 @@ class Settings(BaseSettings):
     blob_storage_verify_ssl: Optional[bool] = None
     blob_storage_auto_create_bucket: Optional[bool] = None
 
-    # If needed for local scripts/tests, this can be disabled via env:
-    # VALIDATE_EXTERNAL_SERVICES_ON_STARTUP=false
-    validate_external_services_on_startup: bool = True
-
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    def __init__(self, validate_on_startup: Optional[bool] = None, **kwargs):
+    def __init__(self, **kwargs):
         """Initialize settings and validate external dependencies."""
         super().__init__(**kwargs)
         self.setup_directories()
 
-        should_validate = (
-            self.validate_external_services_on_startup
-            if validate_on_startup is None
-            else validate_on_startup
-        )
-        if should_validate:
+    def validate_external_services(
+        self,
+        *,
+        validate_mongodb: bool = True,
+        validate_blob_storage: bool = True,
+    ) -> None:
+        """Validate configured external dependencies for runtime entrypoints."""
+        if validate_mongodb:
             self.validate_mongodb_connection()
+        if validate_blob_storage:
             self.validate_blob_storage_connection()
 
     def setup_directories(self) -> None:
@@ -182,18 +182,17 @@ class Settings(BaseSettings):
             auto_create_bucket=auto_create_bucket,
         )
 
-    def validate_mongodb_connection(self) -> bool:
+    def validate_mongodb_connection(self) -> None:
         """Validate the connection to MongoDB."""
         try:
             client = MongoClient(self.mongodb_uri)
             client.admin.command("ping")
-            return True
         except ConnectionFailure as exc:
             raise ConnectionError(
                 "Failed to connect to MongoDB. Please check your connection settings."
             ) from exc
 
-    def validate_blob_storage_connection(self, *, provider: Optional[str] = None) -> bool:
+    def validate_blob_storage_connection(self, *, provider: Optional[str] = None) -> None:
         """Validate the selected object storage provider connection."""
         connection = self.get_blob_storage_connection(provider=provider)
         try:
@@ -210,12 +209,28 @@ class Settings(BaseSettings):
                 verify=connection.verify_ssl,
                 config=client_config,
             )
-            s3_client.list_buckets()
-            return True
-        except (BotoCoreError, ClientError) as exc:
+            s3_client.head_bucket(Bucket=connection.bucket_name)
+        except ClientError as exc:
+            error_code = str(exc.response.get("Error", {}).get("Code", "")).strip()
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            is_missing_bucket = (
+                error_code in _MISSING_BUCKET_ERROR_CODES
+                or status_code == 404
+            )
+            # Fresh environments can proceed; upload flow will auto-create bucket.
+            if is_missing_bucket and connection.auto_create_bucket:
+                return
             raise ConnectionError(
                 "Failed to connect to blob storage provider "
-                f"'{connection.provider}' at {connection.endpoint_url}. "
+                f"'{connection.provider}' at {connection.endpoint_url} "
+                f"for bucket '{connection.bucket_name}'. "
+                "Please check your object storage configuration and service availability."
+            ) from exc
+        except BotoCoreError as exc:
+            raise ConnectionError(
+                "Failed to connect to blob storage provider "
+                f"'{connection.provider}' at {connection.endpoint_url} "
+                f"for bucket '{connection.bucket_name}'. "
                 "Please check your object storage configuration and service availability."
             ) from exc
 
